@@ -44,7 +44,7 @@ interface Project {
   updates: ProjectUpdate[];
   files: ProjectFile[];
   invoices: Invoice[];
-  image?:string;
+  image?: string;
 }
 
 const STATUS_LABEL: Record<string, string> = {
