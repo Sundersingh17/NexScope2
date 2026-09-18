@@ -1,0 +1,532 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── Exact palette, ported from the reference implementation ──────
+     Cream base, near-black ink, orange-red + yellow accents. */
+  --color-cream: #FBF7EE;
+  --color-paper: #F3EDE2;
+  --color-ink: #141414;
+  --color-ink-soft: #2A2622;
+  --color-orange: #FF4D00;
+  --color-yellow: #FFC72E;
+  --color-gray: #6B6B62;
+
+  --font-family-sans: var(--font-archivo), 'Archivo', system-ui, sans-serif;
+  --font-family-display: var(--font-space-grotesk), 'Space Grotesk', system-ui, sans-serif;
+
+  /* Legacy tokens — still referenced by pages not yet converted to the
+     new design (see UPGRADE_CHANGELOG.md for rollout status). Left in
+     place so those pages don't break; will be removed once every page
+     is converted. */
+  --color-black: #050505;
+  --color-dark: #0D0D0D;
+  --color-muted: #A1A1AA;
+  --color-accent: #FFFFFF;
+  --color-border: #1A1A1A;
+  --color-violet: #7C6CF0;
+  --color-blue: #4E8CF5;
+  --color-teal: #3FCFB0;
+  --color-highlight: #D4F135;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: var(--font-family-sans);
+    background-color: var(--color-cream);
+    color: var(--color-ink);
+    overflow-x: hidden;
+    /* Smooths color-var changes from the Design Studio (both explicit
+       Look swatches and a design's own recommendedLook) instead of
+       snapping instantly. Scoped to background/text/border/fill/stroke —
+       not `transition: all`, so it can't fight the deliberate hover/press
+       transitions already set on individual buttons and links elsewhere. */
+    transition: background-color 0.4s ease, color 0.4s ease;
+  }
+
+  h1, h2, h3, h4, h5, h6, .font-display {
+    font-family: var(--font-family-display);
+  }
+
+  ::selection {
+    background: #FF4D00;
+    color: #FBF7EE;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #FBF7EE;
+}
+::-webkit-scrollbar-thumb {
+  background: #141414;
+  border-radius: 3px;
+  opacity: 0.3;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FF4D00;
+}
+
+/* ============================================================
+   Neo-brutalist design system — ported from the reference site
+   ============================================================ */
+
+/* Dot-grid background */
+.dot-grid {
+  background-image: radial-gradient(#141414 1.2px, transparent 1.2px);
+  background-size: 24px 24px;
+}
+
+/* Hollow outline text */
+.text-outline {
+  -webkit-text-stroke: 1.5px #141414;
+  color: transparent;
+}
+@media (min-width: 640px) {
+  .text-outline {
+    -webkit-text-stroke: 2.5px #141414;
+  }
+}
+
+/* Hard-edge "neo" shadows — no blur, solid offset */
+.shadow-neo-sm { box-shadow: 4px 4px 0 0 #141414; }
+.shadow-neo-md { box-shadow: 5px 5px 0 0 #141414; }
+.shadow-neo-lg { box-shadow: 7px 7px 0 0 #141414; }
+.shadow-neo-orange { box-shadow: 5px 5px 0 0 #FF4D00; }
+.shadow-neo-yellow { box-shadow: 5px 5px 0 0 #FFC72E; }
+
+/* Neo-brutalist button/card press interaction */
+.neo-button {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.neo-button:hover {
+  transform: translate(-2px, -2px);
+}
+.neo-button:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 0 #141414;
+}
+
+/* Hide scrollbar for horizontal snap-scroll card rows */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Marquee ticker
+   The clipping element (overflow-hidden) is kept separate from the
+   bordered outer wrapper — iOS/Android WebKit has a long-standing bug
+   where a `border` and `overflow: hidden` on the SAME element as a
+   `transform`-animated descendant can get painted once and never
+   repainted, so the ticker looks frozen on phones even though the
+   animation is technically still "running". Forcing both the clip
+   layer and the animated layer onto their own GPU compositing layer
+   (translateZ/backface-visibility/perspective) works around it. */
+.nx-marquee-clip {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+.animate-marquee {
+  width: max-content;
+  min-width: max-content;
+  flex-shrink: 0;
+  animation: nx-marquee 25s linear infinite;
+  -webkit-transform: translate3d(0, 0, 0);
+  transform: translate3d(0, 0, 0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  -webkit-perspective: 1000px;
+  perspective: 1000px;
+  will-change: transform;
+}
+@keyframes nx-marquee {
+  from { -webkit-transform: translate3d(0, 0, 0); transform: translate3d(0, 0, 0); }
+  to { -webkit-transform: translate3d(-50%, 0, 0); transform: translate3d(-50%, 0, 0); }
+}
+
+/* Eases structural surfaces (section backgrounds, header/footer borders)
+   through a Look/color change too, not just body. Deliberately scoped to
+   these container-level selectors rather than a universal `*` rule, so it
+   never competes with Tailwind's own transition-colors/transition-all
+   utility classes already set on individual buttons/links for hover and
+   press states. */
+section, header, footer, #nx-page-surface {
+  transition: background-color 0.4s ease, border-color 0.4s ease;
+}
+
+/* Design-language switch — swaps the site's actual corner-radius shape
+   language, not just color. Targets the literal Tailwind radius utility
+   classes used across this codebase (verified: only these five appear
+   anywhere in src/), rather than Tailwind's internal theme variables —
+   this way it works regardless of Tailwind version internals, and the
+   specificity of an attribute-qualified ancestor selector naturally beats
+   Tailwind's own single-class utility rule, no !important needed.
+   Toggled via [data-design] on <html>, set by the theme switcher. */
+html[data-design="sharp"] .rounded-full,
+html[data-design="sharp"] .rounded-3xl,
+html[data-design="sharp"] .rounded-2xl,
+html[data-design="sharp"] .rounded-xl,
+html[data-design="sharp"] .rounded-lg {
+  border-radius: 0px;
+}
+
+html[data-design="soft"] .rounded-lg { border-radius: 1.25rem; }
+html[data-design="soft"] .rounded-xl { border-radius: 1.75rem; }
+html[data-design="soft"] .rounded-2xl { border-radius: 2.25rem; }
+html[data-design="soft"] .rounded-3xl { border-radius: 2.75rem; }
+
+/* Mood filter — the big, instant "this feels like a different site" lever.
+   Applied to #nx-page-surface (navbar + page content + footer only, see
+   site-chrome.tsx) rather than <html>/<body>, so the floating chrome
+   (WhatsApp button, CTA bar, the switcher itself) stays crisp and
+   unaffected — a CSS filter composites its entire subtree as one layer,
+   so it has to be scoped to the right wrapper from the start rather than
+   opted out of by a descendant. */
+#nx-page-surface {
+  transition: filter 0.5s ease;
+  position: relative;
+}
+
+html[data-mood="noir"] #nx-page-surface {
+  filter: grayscale(0.9) contrast(1.2) brightness(0.96);
+}
+
+html[data-mood="vivid"] #nx-page-surface {
+  filter: saturate(1.8) contrast(1.06);
+}
+
+/* A soft, slow-drifting glow behind everything in Vivid mode — purely
+   decorative, fixed position, negative z-index, pointer-events: none, so
+   it can never affect layout or intercept a click. Respects
+   prefers-reduced-motion via the existing .animate-marquee-style guard
+   below. */
+html[data-mood="vivid"] #nx-page-surface::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 15% 20%, var(--color-orange) 0%, transparent 40%),
+    radial-gradient(circle at 85% 75%, var(--color-yellow) 0%, transparent 38%);
+  opacity: 0.16;
+  animation: nx-mood-drift 18s ease-in-out infinite alternate;
+}
+
+@keyframes nx-mood-drift {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(-3%, 2%) scale(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-mood="vivid"] #nx-page-surface::before {
+    animation: none;
+  }
+}
+
+/* Futuristic hero glow — same safe pattern as the Vivid mood glow above
+   (fixed positioning would be wrong here since this needs to scroll with
+   the hero section, so it's absolute within the hero instead): purely
+   decorative, no pointer-events, negative-free stacking handled by
+   the hero's own z-10 content wrapper. */
+.nx-futuristic-glow {
+  background:
+    radial-gradient(circle at 25% 30%, var(--color-orange) 0%, transparent 42%),
+    radial-gradient(circle at 75% 70%, var(--color-yellow) 0%, transparent 40%);
+  opacity: 0.22;
+  animation: nx-mood-drift 16s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nx-futuristic-glow {
+    animation: none;
+  }
+}
+
+/* Rotating circular badge */
+.animate-rot {
+  animation: nx-rot 20s linear infinite;
+}
+/* Decorative hero stickers keep their gentle float independent of the
+   entrance/drag transform managed by Framer Motion. */
+.animate-sticker-float {
+  animation-name: nx-sticker-float;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+/* Entrance motion is independent from Framer Motion's rotation/drag
+   transform, so it still runs reliably after a hard refresh. */
+.sticker-drop-in {
+  animation: nx-sticker-drop 1.35s cubic-bezier(.22, 1, .36, 1) both;
+}
+@keyframes nx-sticker-drop {
+  from { opacity: 0; translate: 0 -480px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes nx-sticker-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -8px; }
+}
+@keyframes nx-rot {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Highlighted keyword inline within body copy — used by
+   src/components/ui/highlight.tsx across several pages. Kept as its
+   own class so pages not yet converted to the new look still render
+   correctly. */
+.nx-highlight {
+  background: none;
+  color: var(--color-orange);
+  font-weight: 700;
+  font-size: 1.05em;
+}
+
+/* Hides the native system cursor — only applied once CustomCursor
+   confirms it's actually running (desktop, motion allowed), never via
+   a static CSS rule alone, so there's no risk of an invisible cursor
+   if JS fails to load. */
+.nx-custom-cursor-active,
+.nx-custom-cursor-active * {
+  cursor: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee, .animate-rot {
+    animation: none !important;
+  }
+  .neo-button {
+    transition: none !important;
+  }
+}
+
+/* Admin uses the same brand system as the public site. The selectors below
+   also cover legacy utility classes while the individual managers migrate. */
+.admin-shell {
+  background: var(--color-cream);
+  color: var(--color-ink);
+}
+.admin-sidebar {
+  background: var(--color-paper);
+  border-right: 2px solid var(--color-ink);
+}
+.admin-nav-active,
+.admin-nav-idle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 2px solid transparent;
+  border-radius: 0.75rem;
+  font-weight: 700;
+  text-align: left;
+  transition: transform 150ms ease, background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+.admin-nav-active {
+  background: var(--color-ink);
+  color: var(--color-cream);
+  border-color: var(--color-ink);
+  box-shadow: 4px 4px 0 var(--color-orange);
+}
+.admin-nav-idle {
+  color: color-mix(in srgb, var(--color-ink) 62%, transparent);
+}
+.admin-nav-idle:hover {
+  background: var(--color-yellow);
+  color: var(--color-ink);
+  border-color: var(--color-ink);
+  transform: translateX(3px);
+}
+.admin-account {
+  border-top: 2px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
+  color: color-mix(in srgb, var(--color-ink) 58%, transparent);
+}
+.admin-logout:hover {
+  color: var(--color-orange);
+}
+.admin-header {
+  background: color-mix(in srgb, var(--color-cream) 92%, transparent);
+  border-bottom: 2px solid var(--color-ink);
+  backdrop-filter: blur(14px);
+}
+.admin-kicker {
+  color: var(--color-orange);
+  font-family: var(--font-space-grotesk), sans-serif;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.admin-header-email {
+  color: color-mix(in srgb, var(--color-ink) 58%, transparent);
+  font-weight: 600;
+}
+.admin-mobile-nav {
+  border-bottom: 2px solid var(--color-ink);
+  background: var(--color-paper);
+}
+.admin-mobile-idle {
+  border-color: color-mix(in srgb, var(--color-ink) 22%, transparent);
+  color: color-mix(in srgb, var(--color-ink) 68%, transparent);
+}
+.admin-content {
+  background-image: radial-gradient(color-mix(in srgb, var(--color-ink) 12%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.admin-dashboard-intro {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.admin-live-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.7rem;
+  border: 2px solid var(--color-ink);
+  background: var(--color-yellow);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  box-shadow: 3px 3px 0 var(--color-ink);
+}
+.admin-live-mark span {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--color-orange);
+  animation: admin-pulse 1.8s ease-in-out infinite;
+}
+@keyframes admin-pulse {
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+.admin-stat-card {
+  min-height: 185px;
+  padding: 1.25rem;
+  border: 2px solid var(--color-ink);
+  background: var(--color-cream);
+  box-shadow: 5px 5px 0 var(--color-ink);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+.admin-stat-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 7px 7px 0 var(--color-orange);
+}
+.admin-stat-icon {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 2px solid var(--color-ink);
+  color: var(--color-ink);
+}
+.admin-stat-icon.from-purple-500 { background: var(--color-yellow); }
+.admin-stat-icon.from-blue-500 { background: #b9d9ff; }
+.admin-stat-icon.from-green-500 { background: #bde8c8; }
+.admin-stat-icon.from-indigo-500 { background: #d6c9ff; }
+.admin-stat-icon.from-cyan-500 { background: #b8e9e3; }
+.admin-stat-icon.from-pink-500 { background: #ffc4c8; }
+.admin-stat-icon.from-teal-500 { background: #b8e9e3; }
+.admin-stat-icon.from-orange-500 { background: var(--color-orange); color: var(--color-cream); }
+.admin-stat-label {
+  color: color-mix(in srgb, var(--color-ink) 62%, transparent);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+@media (max-width: 639px) {
+  .admin-dashboard-intro { align-items: start; flex-direction: column; }
+  .admin-content { padding: 1rem; }
+}
+.admin-shell [class*="bg-[#0A0A0A]"],
+.admin-shell [class*="bg-[#0D0D0D]"],
+.admin-shell [class*="bg-white/[0.03]"],
+.admin-shell [class*="bg-white/[0.04]"] {
+  background: var(--color-paper);
+}
+.admin-shell [class*="border-white/"] {
+  border-color: color-mix(in srgb, var(--color-ink) 18%, transparent);
+}
+.admin-shell [class*="text-zinc-"] {
+  color: color-mix(in srgb, var(--color-ink) 68%, transparent);
+}
+.admin-shell input,
+.admin-shell textarea,
+.admin-shell select {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  border-color: color-mix(in srgb, var(--color-ink) 24%, transparent);
+}
+.admin-shell input::placeholder,
+.admin-shell textarea::placeholder {
+  color: color-mix(in srgb, var(--color-ink) 48%, transparent);
+}
+.admin-shell .admin-accent {
+  background: var(--color-orange);
+  color: var(--color-cream);
+}
+.admin-shell .admin-logo {
+  background: var(--color-ink);
+}
+.admin-login {
+  background-color: var(--color-cream);
+  background-image: radial-gradient(color-mix(in srgb, var(--color-ink) 14%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+  color: var(--color-ink);
+}
+.admin-login-logo {
+  background: var(--color-ink);
+  border: 2px solid var(--color-ink);
+  box-shadow: 5px 5px 0 var(--color-orange);
+}
+.admin-login-card {
+  border: 2px solid var(--color-ink);
+  background: var(--color-paper);
+  box-shadow: 7px 7px 0 var(--color-ink);
+}
+.admin-login-muted {
+  color: color-mix(in srgb, var(--color-ink) 62%, transparent);
+}
+.admin-login-input {
+  background: var(--color-cream);
+  border: 2px solid color-mix(in srgb, var(--color-ink) 22%, transparent);
+  color: var(--color-ink);
+}
+.admin-login-input:focus {
+  border-color: var(--color-orange);
+  box-shadow: 3px 3px 0 var(--color-orange);
+}
+.admin-login-submit {
+  background: var(--color-ink);
+  color: var(--color-cream);
+  box-shadow: 4px 4px 0 var(--color-orange);
+}
+.admin-login-submit:hover {
+  transform: translate(-2px, -2px);
+}

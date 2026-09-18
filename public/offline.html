@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>You're offline — NexScope</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex; align-items: center; justify-content: center;
+      background: #FBF7EE; color: #141414;
+      font-family: system-ui, -apple-system, sans-serif;
+      text-align: center; padding: 24px;
+    }
+    .card { max-width: 420px; }
+    h1 { font-size: 1.5rem; font-weight: 800; margin: 0 0 8px; }
+    p { color: #6B6B62; line-height: 1.5; margin: 0 0 20px; }
+    button {
+      border: 2px solid #141414; background: #FF4D00; color: #FBF7EE;
+      font-weight: 700; padding: 10px 20px; border-radius: 999px;
+      cursor: pointer; font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>You're offline</h1>
+    <p>We couldn't reach NexScope right now. Check your connection and try again — pages you've already visited may still be available.</p>
+    <button onclick="location.reload()">Retry</button>
+  </div>
+</body>
+</html>
