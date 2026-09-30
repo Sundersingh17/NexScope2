@@ -307,3 +307,101 @@ model SupportTicket {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+
+enum WfRole {
+  EMPLOYEE
+  ADMIN
+}
+
+model WfOffice {
+  id        String   @id @default(cuid())
+  name      String
+  lat       Float
+  lng       Float
+  radiusM   Int      @default(150)
+  allowedIps String[]
+  createdAt DateTime @default(now())
+
+  @@map("wf_office")
+}
+
+model WfEmployee {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  team          String   @default("General")
+  role          WfRole   @default(EMPLOYEE)
+  passwordHash  String
+  totpSecretEnc String?
+  totpEnabled   Boolean  @default(false)
+  totpLastStep  Int?
+  failedLogins  Int      @default(0)
+  lockedUntil   DateTime?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  sessions       WfSession[]
+  locationEvents WfLocationEvent[]
+  remoteRequests WfRemoteRequest[]
+
+  @@map("wf_employee")
+}
+
+model WfSession {
+  id              String     @id @default(cuid())
+  employeeId      String
+  employee        WfEmployee @relation(fields: [employeeId], references: [id])
+  startedAt       DateTime   @default(now())
+  endedAt         DateTime?
+  zone            String
+  remoteRequestId String?
+  startDistM      Int?
+
+  @@index([employeeId, endedAt])
+  @@map("wf_session")
+}
+
+model WfLocationEvent {
+  id         String     @id @default(cuid())
+  employeeId String
+  employee   WfEmployee @relation(fields: [employeeId], references: [id])
+  sessionId  String?
+  at         DateTime   @default(now())
+  kind       String
+  distM      Int
+  accM       Int
+  method     String     @default("BROWSER_GPS")
+  result     String
+
+  @@index([employeeId, at])
+  @@map("wf_location_event")
+}
+
+model WfRemoteRequest {
+  id          String     @id @default(cuid())
+  employeeId  String
+  employee    WfEmployee @relation(fields: [employeeId], references: [id])
+  reason      String
+  status      String     @default("PENDING")
+  decidedById String?
+  decidedAt   DateTime?
+  validFrom   DateTime?
+  validUntil  DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@index([employeeId, status])
+  @@map("wf_remote_request")
+}
+
+model WfAuditLog {
+  id       String   @id @default(cuid())
+  at       DateTime @default(now())
+  actorId  String
+  action   String
+  targetId String?
+  meta     Json?
+
+  @@index([targetId, at])
+  @@map("wf_audit_log")
+}
