@@ -1,0 +1,309 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  ADMIN
+  EDITOR
+  AUTHOR
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  role      UserRole @default(EDITOR)
+  image     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  blogs     Blog[]
+}
+
+model Blog {
+  id          String     @id @default(cuid())
+  title       String
+  slug        String     @unique
+  excerpt     String?
+  content     String
+  coverImage  String?
+  readingTime Int?
+  published   Boolean    @default(false)
+  featured    Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  authorId    String
+  author      User       @relation(fields: [authorId], references: [id])
+  categoryId  String?
+  category    Category?  @relation(fields: [categoryId], references: [id])
+  tags        TagOnBlog[]
+  seoTitle    String?
+  seoDesc     String?
+}
+
+model Category {
+  id          String @id @default(cuid())
+  name        String
+  slug        String @unique
+  description String?
+  blogs       Blog[]
+}
+
+model Tag {
+  id    String      @id @default(cuid())
+  name  String
+  slug  String      @unique
+  blogs TagOnBlog[]
+}
+
+model TagOnBlog {
+  blogId String
+  tagId  String
+  blog   Blog @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([blogId, tagId])
+}
+
+model Service {
+  id          String     @id @default(cuid())
+  title       String
+  slug        String     @unique
+  shortDesc   String
+  description String
+  icon        String?
+  coverImage  String?
+  benefits    String?
+  process     String?
+  pricing     String?
+  faq         String?
+  order       Int        @default(0)
+  published   Boolean    @default(false)
+  seoTitle    String?
+  seoDesc     String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Portfolio {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  category    String?
+  description String
+  images      String?
+  videoUrl    String?
+  client      String?
+  url         String?
+  testimonial String?
+  challenge   String?
+  solution    String?
+  results     String?
+  process     String?
+  isSample    Boolean  @default(false)
+  published   Boolean  @default(false)
+  featured    Boolean  @default(false)
+  seoTitle    String?
+  seoDesc     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Testimonial {
+  id        String   @id @default(cuid())
+  name      String
+  company   String
+  role      String?
+  content   String
+  rating    Int      @default(5)
+  avatar    String?
+  videoUrl  String?
+  isSample  Boolean  @default(false)
+  featured  Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  company   String?
+  service   String?
+  budget    String?
+  message   String?
+  source    String   @default("website")
+  status    String   @default("new")
+  score     Int      @default(0)
+  temperature String @default("cold") // "hot" | "warm" | "cold" — set by lead-scoring automation
+  createdAt DateTime @default(now())
+}
+
+model FAQ {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  category  String?
+  order     Int      @default(0)
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model ThemePreset {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  // JSON-stringified map of the 7 public-site CSS variables this preset
+  // overrides, e.g. {"orange":"#FF4D00","yellow":"#FFC72E", ...}. Scoped
+  // to accent/background colors only — never layout, fonts, or spacing —
+  // so a visitor picking a preset can't produce a broken-looking page.
+  colors    String
+  // One of a fixed set of preloaded headline/body font pairings — see
+  // FONT_PAIRS in the theme switcher and admin manager for the allowed
+  // slugs. Swapping this changes the site's whole typographic voice
+  // (e.g. sharp geometric sans -> warm editorial serif) without touching
+  // layout or section structure.
+  fontPair  String   @default("grotesk-archivo")
+  // One of "signature" | "sharp" | "soft" — swaps the site's corner-radius
+  // language (square-cornered vs. default vs. pill-heavy). See the
+  // html[data-design=...] rules in globals.css.
+  design    String   @default("signature")
+  // One of "none" | "noir" | "vivid" — the full-page visual filter (see
+  // html[data-mood=...] rules in globals.css). This is the most dramatic
+  // single lever: applied on top of color/font/shape, it's what makes a
+  // preset switch feel like a genuinely different site rather than a
+  // reskinned one.
+  mood      String   @default("none")
+  isDefault Boolean  @default(false)
+  order     Int      @default(0)
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Package {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  icon      String   @default("Zap") // lucide-react icon name, matched client-side
+  color     String   @default("from-blue-500 to-cyan-500") // Tailwind gradient classes
+  signal    String // short italicized hook line, e.g. "Starting out? This is enough."
+  purpose   String
+  forWhom   String
+  outcome   String
+  items     String? // JSON-stringified string[]
+  order     Int      @default(0)
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  name      String
+  role      String
+  bio       String?
+  image     String?
+  order     Int      @default(0)
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ── Client Portal ──────────────────────────────────────────────────────
+// Entirely separate from the admin/staff auth system (Firebase). Clients
+// are created by staff (via /admin), not self-registered, and log in with
+// email + password against this model. See src/lib/client-auth.ts.
+
+model Client {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  passwordHash     String
+  name             String
+  company          String?
+  phone            String?
+  status           String    @default("active") // active | inactive
+  source           String    @default("admin") // "admin" (staff-created) | "signup" (self-registered) — lets staff spot and clean up fake/demo self-signups
+  resetToken       String?   @unique
+  resetTokenExpiry DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  projects         Project[]
+  tickets          SupportTicket[]
+  invoices         Invoice[]
+}
+
+model Project {
+  id          String          @id @default(cuid())
+  clientId    String
+  client      Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  status      String          @default("onboarding") // onboarding | in_progress | review | completed
+  startDate   DateTime?
+  dueDate     DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  updates     ProjectUpdate[]
+  files       ProjectFile[]
+  invoices    Invoice[]
+}
+
+model ProjectUpdate {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  videoUrl        String?
+  marketContext   String?
+  nextAction      String?
+  clientPrompt    String?
+  clientResponse  String?
+  respondedAt     DateTime?
+  createdAt       DateTime @default(now())
+}
+
+model ProjectFile {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name       String
+  url        String   // Vercel Blob URL
+  size       Int?     // bytes
+  uploadedBy String   @default("admin") // "admin" | "client"
+  createdAt  DateTime @default(now())
+}
+
+model Invoice {
+  id                String    @id @default(cuid())
+  projectId         String
+  project           Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clientId          String
+  client            Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  invoiceNumber     String    @unique
+  amount            Int       // in paise (smallest INR unit) — matches Razorpay's expected format
+  currency          String    @default("INR")
+  status            String    @default("pending") // pending | paid | overdue | cancelled
+  description       String?
+  dueDate           DateTime?
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  paidAt            DateTime?
+  createdAt         DateTime  @default(now())
+}
+
+model SupportTicket {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  subject   String
+  message   String
+  status    String   @default("open") // open | in_progress | resolved
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

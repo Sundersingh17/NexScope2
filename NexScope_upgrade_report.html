@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NexScope Upgrade Report</title>
+<style>
+  @page { size: A4; margin: 18mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: #141414; background: #fbf7ee; font-family: Arial, sans-serif; line-height: 1.5; }
+  .cover { min-height: 245mm; display: flex; flex-direction: column; justify-content: space-between; padding: 16mm 0; }
+  .eyebrow { color: #ff4d00; font-weight: bold; letter-spacing: .16em; text-transform: uppercase; font-size: 11px; }
+  h1 { font-size: 48px; line-height: .95; text-transform: uppercase; margin: 18px 0; max-width: 620px; }
+  h2 { font-size: 25px; line-height: 1.05; text-transform: uppercase; margin: 0 0 14px; }
+  h3 { font-size: 16px; margin: 0 0 5px; }
+  p { margin: 6px 0; }
+  .accent { color: #ff4d00; }
+  .dark { background: #141414; color: #fbf7ee; padding: 22px; }
+  .yellow { background: #ffc72e; padding: 22px; }
+  .meta { font-size: 12px; color: #6b6b62; }
+  .section { page-break-before: always; padding-top: 6mm; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .card { border: 2px solid #141414; padding: 15px; background: #f3ede2; break-inside: avoid; }
+  .card p, li { font-size: 12px; color: #4b4b45; }
+  ul { margin: 8px 0 0; padding-left: 18px; }
+  .status { display: inline-block; border: 2px solid #141414; padding: 4px 8px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+  .footer { margin-top: 26px; padding-top: 10px; border-top: 2px solid #141414; font-size: 10px; color: #6b6b62; }
+</style>
+</head>
+<body>
+<section class="cover">
+  <div>
+    <div class="eyebrow">NexScope / Product Upgrade Report</div>
+    <h1>Building a sharper digital agency experience.</h1>
+    <p style="font-size:18px; max-width:560px;">A summary of the improvements completed in the local workspace through September 5, 2026.</p>
+  </div>
+  <div class="dark">
+    <p class="eyebrow" style="color:#ffc72e;">Current status</p>
+    <h2>Ready for review</h2>
+    <p>All recent work remains local and has not been pushed to GitHub.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="eyebrow">01 / Public website</div>
+  <h2>Responsive and conversion-focused</h2>
+  <div class="grid">
+    <div class="card"><h3>Mobile hero responsiveness</h3><p>Repositioned and constrained hero badges so Branding, Websites, and AI Automation remain visible on narrow screens without colliding or overflowing.</p><span class="status">Validated</span></div>
+    <div class="card"><h3>Mobile marquee loop</h3><p>Made the marquee viewport width-fluid, the track max-content and non-shrinking, and both repeated groups identical. The animation now moves exactly one group width.</p><span class="status">Validated</span></div>
+    <div class="card"><h3>Outcome-based service explorer</h3><p>Added an interactive homepage section where visitors choose a goal and receive a recommended NexScope service with explore and quote actions.</p><span class="status">Validated</span></div>
+    <div class="card"><h3>Guided quote intake</h3><p>Converted the long quote form into a two-step flow: contact details first, then project direction, service, budget, and goals. Service recommendations now prefill the matching quote option.</p><span class="status">Validated</span></div>
+    <div class="card"><h3>Outcome proof section</h3><p>Added a qualitative outcomes section explaining the shift NexScope creates across positioning, digital presence, growth, and operations without inventing new metrics.</p><span class="status">Validated</span></div>
+    <div class="card"><h3>Mobile project CTA</h3><p>Added a scroll-triggered mobile-only Start a Project action that works alongside WhatsApp and stays hidden on the quote page.</p><span class="status">Validated</span></div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="eyebrow">02 / Proof and credibility</div>
+  <h2>More convincing project stories</h2>
+  <div class="grid">
+    <div class="card"><h3>Video testimonial showcase</h3><p>Added a reusable testimonial reel with project stories, play/pause behavior, automatic rotation, mobile layout, and support for real video URLs.</p></div>
+    <div class="card"><h3>Admin video testimonial support</h3><p>Admins can attach a direct MP4/WebM URL to a testimonial. Saved testimonials can feed the public video showcase.</p></div>
+    <div class="card"><h3>Portfolio case studies</h3><p>Portfolio cards now open internal case-study pages with media, challenge, approach, results, process, testimonials, and a project CTA.</p></div>
+    <div class="card"><h3>Case-study editor</h3><p>Admin portfolio editing now supports Challenge, Solution, Results, and Process steps. Fallback stories keep the experience usable before content is seeded.</p></div>
+    <div class="card"><h3>Portfolio discovery</h3><p>Added category filters and related case-study navigation so visitors can browse similar work and continue exploring without returning to the top-level grid.</p><span class="status">Validated</span></div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="eyebrow">03 / Client experience</div>
+  <h2>A private project collaboration room</h2>
+  <div class="yellow">
+    <h3>Client portal workflow</h3>
+    <ul>
+      <li>Admin creates a client login and assigns projects.</li>
+      <li>Clients see progress, deadlines, latest updates, files, and billing.</li>
+      <li>Daily updates can include a working video, market context, next action, and a decision prompt.</li>
+      <li>Clients can respond securely to a project update from their portal.</li>
+      <li>Portal refreshes manually or automatically during the workday.</li>
+      <li>Logout now returns clients to the public homepage instead of the login page.</li>
+    </ul>
+  </div>
+  <div class="card" style="margin-top:14px;"><h3>Email notifications</h3><p>New project updates can notify the client through Resend with the update summary, video link, market context, next action, decision prompt, and portal link. Email failures do not prevent updates from saving.</p></div>
+</section>
+
+<section class="section">
+  <div class="eyebrow">04 / Verification and next steps</div>
+  <h2>What was verified</h2>
+  <div class="grid">
+    <div class="card"><h3>Responsive checks</h3><p>Mobile widths tested include 320, 375, 390, 414, 430, and 768px for the marquee. The portal, case-study page, and service explorer were checked at 390px with no document-level horizontal overflow.</p></div>
+    <div class="card"><h3>Code checks</h3><p>TypeScript and editor diagnostics pass for the recent upgrade surfaces. Focused lint passes for the new standalone components; the large legacy admin page still contains unrelated existing lint findings.</p></div>
+    <div class="card"><h3>Database</h3><p>Prisma schema changes for project collaboration and portfolio case studies were synced to the configured PostgreSQL database. Prisma Client was regenerated locally.</p></div>
+    <div class="card"><h3>Before deployment</h3><p>Verify the Resend sender domain instead of using <code>yourdomain.com</code>, review real case-study copy and metrics, test client login and email delivery, then commit and push when approved.</p></div>
+    <div class="card"><h3>Interaction polish</h3><p>Added public page transitions with reduced-motion support and repaired the hero sticker entrance drop animation so refreshes show the intended staggered arrival.</p></div>
+    <div class="card"><h3>Client Portal navigation</h3><p>Added direct Client Portal access to both desktop and mobile navigation at <code>/portal/login</code>, while keeping the admin route private.</p><span class="status">Validated</span></div>
+  </div>
+  <div class="footer">NexScope local upgrade report · Generated for review · No GitHub push performed</div>
+</section>
+</body>
+</html>
