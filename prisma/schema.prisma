@@ -405,3 +405,45 @@ model WfAuditLog {
   @@index([targetId, at])
   @@map("wf_audit_log")
 }
+
+
+// APPEND to prisma/schema.prisma AFTER the Piece 1 models. Additive only; no existing model is changed.
+// (Plain string ids are used instead of relations so the Piece 1 models do not need editing.)
+
+model WfDevice {
+  id         String    @id @default(cuid())
+  employeeId String
+  name       String
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([employeeId])
+  @@map("wf_device")
+}
+
+model WfPairingCode {
+  id         String    @id @default(cuid())
+  employeeId String
+  codeHash   String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@map("wf_pairing_code")
+}
+
+// One row per minute of a session: the app in front (or idle). Aggregated on the agent, so storage stays small.
+model WfAgentMinute {
+  id        String   @id @default(cuid())
+  sessionId String
+  deviceId  String
+  minute    DateTime
+  appName   String
+  idle      Boolean
+
+  @@unique([sessionId, minute])
+  @@index([sessionId])
+  @@map("wf_agent_minute")
+}
