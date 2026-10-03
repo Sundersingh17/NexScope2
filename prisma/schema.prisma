@@ -447,3 +447,38 @@ model WfAgentMinute {
   @@index([sessionId])
   @@map("wf_agent_minute")
 }
+// APPEND to prisma/schema.prisma after Pieces 1 and 3. Additive only.
+model WfHourlyReport {
+  id          String    @id @default(cuid())
+  employeeId  String
+  sessionId   String
+  periodStart DateTime
+  periodEnd   DateTime
+  activeMin   Int
+  idleMin     Int
+  topApps     Json
+  partial     Boolean   @default(false)
+  project     String?
+  noteEnc     String?
+  status      String    @default("DRAFT") // DRAFT | SUBMITTED
+  submittedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([sessionId, periodStart])
+  @@index([employeeId, periodStart])
+  @@map("wf_hourly_report")
+}
+
+model WfReportFile {
+  id         String   @id @default(cuid())
+  reportId   String
+  employeeId String
+  name       String
+  sizeB      Int
+  kind       String
+  storageKey String
+  createdAt  DateTime @default(now())
+
+  @@index([reportId])
+  @@map("wf_report_file")
+}

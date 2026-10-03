@@ -1,0 +1,10 @@
+# Free scheduler. Add repo secrets WF_BASE_URL (https://your-site) and WF_CRON_SECRET.
+name: workforce-hourly
+on:
+  schedule: [{ cron: "7 * * * *" }]
+  workflow_dispatch:
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS -X POST "${{ secrets.WF_BASE_URL }}/api/workforce/jobs/hourly" -H "x-cron-secret: ${{ secrets.WF_CRON_SECRET }}"
