@@ -304,7 +304,7 @@ export default function AdminReportDetail() {
                         </span>
 
                         <span className="text-sm text-neutral-400">
-                          {app.minutes ?? 0}m
+                          {app.min ?? 0}m
                         </span>
                       </div>
                     )
