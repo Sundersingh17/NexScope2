@@ -1,14 +1,82 @@
-import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
-import path from "node:path";
+import { createClient } from "@supabase/supabase-js";
 
-// Free option: encrypted files on the server's disk (works on your own VM; add .wf-files to .gitignore).
-// Serverless hosting has no persistent disk: swap these three functions for S3/R2 later.
-const root = () => path.resolve(process.env.WF_FILES_DIR ?? "./.wf-files");
-function at(k: string) {
-  const p = path.resolve(root(), k);
-  if (!p.startsWith(root() + path.sep)) throw new Error("Bad storage key");
-  return p;
+const BUCKET = "workforce-evidence";
+
+function getSupabaseAdmin() {
+  const url = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceRoleKey) {
+    throw new Error(
+      "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variable"
+    );
+  }
+
+  return createClient(url, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
 }
-export async function put(k: string, buf: Buffer) { const p = at(k); await mkdir(path.dirname(p), { recursive: true }); await writeFile(p, buf); }
-export const get = (k: string) => readFile(at(k));
-export const del = (k: string) => unlink(at(k)).catch(() => {});
+
+function safeKey(k: string) {
+  const normalized = k.replace(/\\/g, "/");
+
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    normalized.includes("..") ||
+    normalized.includes("//")
+  ) {
+    throw new Error("Bad storage key");
+  }
+
+  return normalized;
+}
+
+export async function put(k: string, buf: Buffer) {
+  const key = safeKey(k);
+  const supabase = getSupabaseAdmin();
+
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(key, buf, {
+      contentType: "application/octet-stream",
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`Supabase Storage upload failed: ${error.message}`);
+  }
+}
+
+export async function get(k: string): Promise<Buffer> {
+  const key = safeKey(k);
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .download(key);
+
+  if (error || !data) {
+    throw new Error(
+      `Supabase Storage download failed: ${error?.message ?? "No data returned"}`
+    );
+  }
+
+  return Buffer.from(await data.arrayBuffer());
+}
+
+export async function del(k: string) {
+  const key = safeKey(k);
+  const supabase = getSupabaseAdmin();
+
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .remove([key]);
+
+  if (error) {
+    throw new Error(`Supabase Storage delete failed: ${error.message}`);
+  }
+}
