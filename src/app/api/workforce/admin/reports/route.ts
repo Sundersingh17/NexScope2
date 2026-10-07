@@ -2,6 +2,9 @@ import { prisma } from "@/lib/workforce/db";
 import { handle } from "@/lib/workforce/http";
 import { requireAdmin } from "@/lib/workforce/auth";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 // Admin list. Filters: employeeId, team, status, from, to (ISO dates). Notes are NOT included here.
 export const GET = handle(async (req) => {
   await requireAdmin();

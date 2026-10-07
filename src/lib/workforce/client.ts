@@ -11,6 +11,7 @@ export async function api<T = any>(
   }
 ): Promise<T> {
   const r = await fetch("/api/workforce" + path, {
+  cache: "no-store",
     method: init?.method ?? (init?.body ? "POST" : "GET"),
     headers: init?.body
       ? {
