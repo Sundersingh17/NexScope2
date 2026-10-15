@@ -1,5 +1,6 @@
-"use client";
+﻿"use client";
 
+import LocationReporter from "@/components/workforce/location-reporter";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, getPosition } from "@/lib/workforce/client";
@@ -42,6 +43,8 @@ export default function EmployeeDashboard() {
   } | null>(null);
 
   const [busy, setBusy] = useState(false);
+  const [explanation, setExplanation] = useState("");
+const [holdBusy, setHoldBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -127,7 +130,7 @@ export default function EmployeeDashboard() {
 
       setMsg({
         t: "ok",
-        s: "Checked out — monitoring stopped",
+        s: "Checked out ΓÇö monitoring stopped",
       });
     });
 
@@ -166,6 +169,33 @@ export default function EmployeeDashboard() {
       });
     });
 
+    const submitExplanation = async () => {
+  setMsg(null);
+  setHoldBusy(true);
+
+  try {
+    await api("/location-hold", {
+      method: "POST",
+      body: { explanation: explanation.trim() },
+    });
+
+    setExplanation("");
+    setMsg({
+      t: "ok",
+      s: "Explanation submitted. Tracking remains on hold until an administrator reviews it.",
+    });
+
+    await load();
+  } catch (e: any) {
+    setMsg({
+      t: "err",
+      s: e.message || "Unable to submit your explanation.",
+    });
+  } finally {
+    setHoldBusy(false);
+  }
+};
+
   const logout = async () => {
     await api("/auth/logout", {
       body: {},
@@ -177,12 +207,14 @@ export default function EmployeeDashboard() {
   if (!me) {
     return (
       <main className="min-h-screen bg-neutral-950 text-neutral-400 p-8">
-        Loading…
+        LoadingΓÇª
       </main>
     );
   }
 
   const s = me.openSession;
+  const hold = s?.hold ?? null;
+const holdActive = Boolean(hold && hold.status !== "APPROVED");
 
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100 p-4 md:p-8">
@@ -196,7 +228,7 @@ export default function EmployeeDashboard() {
             </h1>
 
             <p className="text-sm text-neutral-400">
-              {me.employee.name} · {me.employee.team}
+              {me.employee.name}  {me.employee.team}
             </p>
           </div>
 
@@ -244,10 +276,71 @@ export default function EmployeeDashboard() {
 
           <b>
             {s
-              ? "Work session active — NexScope monitoring enabled."
-              : "Work session ended — monitoring disabled."}
+              ? "Work session active NexScope monitoring enabled."
+              : "Work session ended  monitoring disabled."}
           </b>
         </div>
+{/* LOCATION HOLD */}
+{holdActive && (
+  <div className={`${card} border-amber-500/40 space-y-4`}>
+    <div>
+      <h2 className="text-lg font-semibold text-amber-400">
+        Location monitoring is on hold
+      </h2>
+      <p className="mt-1 text-sm text-neutral-300">
+        You have left the office geofence. Your desktop agent must remain paused
+        until an administrator approves your explanation.
+      </p>
+    </div>
+
+    {hold?.decisionNote && (
+      <p className="text-sm text-neutral-300">
+        Admin note: {hold.decisionNote}
+      </p>
+    )}
+
+    {hold?.submittedAt ? (
+      <p className="text-sm text-amber-300">
+        Your explanation has been submitted. Waiting for administrator review.
+      </p>
+    ) : (
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submitExplanation();
+        }}
+        className="space-y-3"
+      >
+        <label className="block text-sm font-medium" htmlFor="hold-explanation">
+          Explain why you left the office
+        </label>
+
+        <textarea
+          id="hold-explanation"
+          value={explanation}
+          onChange={(event) => setExplanation(event.target.value)}
+          minLength={3}
+          maxLength={1000}
+          required
+          rows={4}
+          placeholder="Enter your explanation (3–1000 characters)"
+          className="w-full rounded-lg border border-neutral-700 bg-neutral-900 p-3 text-sm text-white placeholder:text-neutral-500 focus:border-amber-500 focus:outline-none"
+          disabled={holdBusy}
+        />
+
+        <button
+          type="submit"
+          disabled={holdBusy || explanation.trim().length < 3}
+          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {holdBusy ? "Submitting..." : "Submit explanation"}
+        </button>
+      </form>
+    )}
+  </div>
+)}
+<LocationReporter active={Boolean(s) && !holdActive} />
+
 
         {/* SESSION STATS */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -263,7 +356,7 @@ export default function EmployeeDashboard() {
                     hour: "2-digit",
                     minute: "2-digit",
                   })
-                : "—"}
+                : "-"}
             </p>
           </div>
 
@@ -411,7 +504,7 @@ export default function EmployeeDashboard() {
                 <span>
                   {d.name}{" "}
                   <span className="text-neutral-500">
-                    · last seen{" "}
+                      last seen{" "}
                     {d.lastSeenAt
                       ? new Date(
                           d.lastSeenAt

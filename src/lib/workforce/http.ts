@@ -1,28 +1,61 @@
+
+import { isIP } from "node:net";
 import { ZodError } from "zod";
 
 export class HttpError extends Error {
   status: number;
+  retryAfterSeconds?: number;
 
-  constructor(status: number, message: string) {
+  constructor(
+    status: number,
+    message: string,
+    retryAfterSeconds?: number
+  ) {
     super(message);
+    this.name = "HttpError";
     this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
-export const clientIp = (req: Request) =>
-  req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+export const clientIp = (req: Request): string => {
+  const forwarded = req.headers.get("x-forwarded-for")?.trim();
 
-// In-memory limiter: fine for one server/VM. On serverless, move this to the database.
+  // Fail closed if the client IP is absent or ambiguous.
+  if (!forwarded || forwarded.includes(",")) {
+    return "unknown";
+  }
+
+  // Accept only a valid IPv4 or IPv6 address.
+  return isIP(forwarded) ? forwarded : "unknown";
+};
+
+// In-memory limiter: fine for one server/VM.
+// On serverless, move this to the database.
 const hits = new Map<string, number[]>();
 
 export function limit(key: string, max: number, windowMs: number) {
   const now = Date.now();
+
   const recent = (hits.get(key) ?? []).filter(
-    (t) => now - t < windowMs
+    (timestamp) => now - timestamp < windowMs
   );
 
+  // Store the pruned list even when the request is rejected.
+  hits.set(key, recent);
+
   if (recent.length >= max) {
-    throw new HttpError(429, "Too many attempts. Try again later.");
+    // The oldest request expires first in this rolling window.
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.ceil((recent[0] + windowMs - now) / 1000)
+    );
+
+    throw new HttpError(
+      429,
+      "Too many attempts. Try again later.",
+      retryAfterSeconds
+    );
   }
 
   recent.push(now);
@@ -45,7 +78,7 @@ export function limit(key: string, max: number, windowMs: number) {
 function isAllowedOrigin(origin: string) {
   const configuredOrigin = process.env.WF_APP_ORIGIN?.trim();
 
-  // Preserve the original configured-origin behavior.
+  // Preserve the configured-origin behavior.
   if (configuredOrigin && origin === configuredOrigin) {
     return true;
   }
@@ -84,7 +117,7 @@ export function handle(
       if (req.method !== "GET") {
         const origin = req.headers.get("origin");
 
-        if (origin && !isAllowedOrigin(origin)) {
+        if (!origin || !isAllowedOrigin(origin)) {
           throw new HttpError(403, "Bad origin");
         }
       }
@@ -92,9 +125,18 @@ export function handle(
       return await fn(req, ctx);
     } catch (e) {
       if (e instanceof HttpError) {
+        const headers = new Headers();
+
+        if (e.retryAfterSeconds !== undefined) {
+          headers.set("Retry-After", String(e.retryAfterSeconds));
+        }
+
         return Response.json(
           { error: e.message },
-          { status: e.status }
+          {
+            status: e.status,
+            headers,
+          }
         );
       }
 
