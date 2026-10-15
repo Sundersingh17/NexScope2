@@ -344,7 +344,7 @@ model WfEmployee {
   sessions       WfSession[]
   locationEvents WfLocationEvent[]
   remoteRequests WfRemoteRequest[]
-
+  locationHolds  WfLocationHold[]
   @@map("wf_employee")
 }
 
@@ -352,6 +352,7 @@ model WfSession {
   id              String     @id @default(cuid())
   employeeId      String
   employee        WfEmployee @relation(fields: [employeeId], references: [id])
+  locationHolds  WfLocationHold[]
   startedAt       DateTime   @default(now())
   endedAt         DateTime?
   zone            String
@@ -481,4 +482,60 @@ model WfReportFile {
 
   @@index([reportId])
   @@map("wf_report_file")
+}
+// APPEND to prisma/schema.prisma after the earlier pieces. Additive only.
+
+// Latest known position of each OPEN session. One row per session, overwritten on each ping: no movement trail is kept.
+model WfLivePosition {
+  sessionId  String   @id
+  employeeId String
+  lat        Float
+  lng        Float
+  accM       Int
+  zone       String   // OFFICE | REMOTE | OUTSIDE | UNKNOWN
+  lastKnown  String   // last zone that was not UNKNOWN
+  netMatch   Boolean? // request came from an allowed office network (null = no networks configured)
+  updatedAt  DateTime @default(now())
+
+  @@index([employeeId])
+  @@map("wf_live_position")
+}
+
+model WfAlert {
+  id           String    @id @default(cuid())
+  employeeId   String
+  sessionId    String?
+  kind         String    // ZONE_EXIT
+  message      String
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+  resolvedById String?
+
+  @@index([resolvedAt, createdAt])
+  @@map("wf_alert")
+}
+
+
+// Office-zone exit hold.
+model WfLocationHold {
+  id           String     @id @default(cuid())
+  employeeId   String
+  employee     WfEmployee @relation(fields: [employeeId], references: [id], map: "wf_location_hold_employee_fk")
+  sessionId    String
+  session      WfSession  @relation(fields: [sessionId], references: [id], map: "wf_location_hold_session_fk")
+  startedAt    DateTime   @default(now())
+  endedAt      DateTime?
+  status       String     @default("PENDING")
+  explanation  String?
+  submittedAt  DateTime?
+  decisionById String?
+  decidedAt    DateTime?
+  decisionNote String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @default(now()) @updatedAt
+
+  @@index([employeeId, startedAt], map: "wf_location_hold_employee_started_idx")
+  @@index([sessionId, endedAt], map: "wf_location_hold_session_ended_idx")
+  @@index([status, createdAt], map: "wf_location_hold_status_created_idx")
+  @@map("wf_location_hold")
 }
