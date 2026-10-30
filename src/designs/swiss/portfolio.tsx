@@ -1,31 +1,81 @@
 import type { PortfolioDesignProps } from "../types";
+import type { PortfolioItem } from "@/components/sections/portfolio-showcase";
 import Image from "next/image";
 
-const FALLBACK_PORTFOLIO = [
-  { slug: "business-website", title: "Business Website", description: "A premium corporate website with CMS integration and lightning-fast performance.", category: "Web Development" },
-  { slug: "ecommerce-store", title: "E-commerce Store", description: "Full-featured online store with custom checkout and inventory management.", category: "E-Commerce" },
-  { slug: "ai-automation-system", title: "AI Automation System", description: "Intelligent workflow automation reducing manual processing by 80%.", category: "AI / Automation" },
-  { slug: "brand-identity-project", title: "Brand Identity Project", description: "Complete brand overhaul including logo, guidelines, and marketing collateral.", category: "Brand Identity" },
+const FALLBACK_PORTFOLIO: PortfolioItem[] = [
+  {
+    slug: "project-1",
+    title: "Residential Villa",
+    description: "A contemporary residential project.",
+    category: "Residential",
+  },
+  {
+    slug: "project-2",
+    title: "Luxury Interior",
+    description: "An elegant interior design project.",
+    category: "Interior",
+  },
+  {
+    slug: "project-3",
+    title: "Commercial Space",
+    description: "A sophisticated commercial development.",
+    category: "Commercial",
+  },
 ];
 
 export function SwissPortfolio({ items }: PortfolioDesignProps) {
-  const projects = items && items.length > 0 ? items : FALLBACK_PORTFOLIO;
+  const projects = items?.length ? items : FALLBACK_PORTFOLIO;
 
   return (
-    <section className="border-b border-[var(--color-ink)]/15 bg-[var(--color-cream)] px-6 py-20 sm:px-10 sm:py-28">
-      <div className="mx-auto max-w-6xl">
-        <h2 className="mb-16 text-center text-3xl font-bold tracking-tight text-[var(--color-ink)] sm:text-4xl">
-          Selected work
-        </h2>
-        <div className="grid gap-x-8 gap-y-12 sm:grid-cols-2">
+    <section className="py-24">
+      <div className="mx-auto max-w-7xl px-6">
+        <div className="mb-16">
+          <p className="mb-4 text-xs font-medium uppercase tracking-[0.25em] text-[var(--color-muted)]">
+            Selected Work
+          </p>
+
+          <h2 className="text-4xl font-bold tracking-tight text-[var(--color-ink)] md:text-6xl">
+            Portfolio
+          </h2>
+        </div>
+
+        <div className="grid gap-x-8 gap-y-14 md:grid-cols-2">
           {projects.map((project) => (
-            <a key={project.slug} href={`/portfolio/${project.slug}`} className="group border-t border-[var(--color-ink)] pt-4">
-              <div className="relative mb-4 aspect-[4/3] bg-[var(--color-paper)]">
-                {project.image && <Image src={project.image} unoptimized alt={project.title} fill sizes="(min-width: 640px) 50vw, 100vw" className="object-cover grayscale transition-all group-hover:grayscale-0" />}
+            <a
+              key={project.slug}
+              href={`/portfolio/${project.slug}`}
+              className="group block"
+            >
+              <div className="relative mb-4 aspect-[4/3] overflow-hidden bg-[var(--color-paper)]">
+                {project.image ? (
+                  <Image
+                    src={project.image}
+                    unoptimized
+                    alt={project.title}
+                    fill
+                    sizes="(max-width: 768px) 100vw, 50vw"
+                    className="object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <span className="text-sm uppercase tracking-widest text-[var(--color-muted)]">
+                      {project.category}
+                    </span>
+                  </div>
+                )}
               </div>
-              <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-ink)]/60">{project.category}</p>
-              <h3 className="mt-1 text-lg font-bold text-[var(--color-ink)] group-hover:text-[var(--color-ink)]/60 transition-colors">{project.title}</h3>
-              <p className="mt-1 text-xs font-light text-[var(--color-ink)]/60">{project.description}</p>
+
+              <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-muted)]">
+                {project.category}
+              </p>
+
+              <h3 className="mt-1 text-lg font-bold text-[var(--color-ink)] group-hover:underline">
+                {project.title}
+              </h3>
+
+              <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--color-muted)]">
+                {project.description}
+              </p>
             </a>
           ))}
         </div>

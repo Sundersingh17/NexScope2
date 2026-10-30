@@ -307,3 +307,235 @@ model SupportTicket {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+
+enum WfRole {
+  EMPLOYEE
+  ADMIN
+}
+
+model WfOffice {
+  id        String   @id @default(cuid())
+  name      String
+  lat       Float
+  lng       Float
+  radiusM   Int      @default(150)
+  allowedIps String[]
+  createdAt DateTime @default(now())
+
+  @@map("wf_office")
+}
+
+model WfEmployee {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  team          String   @default("General")
+  role          WfRole   @default(EMPLOYEE)
+  passwordHash  String
+  totpSecretEnc String?
+  totpEnabled   Boolean  @default(false)
+  totpLastStep  Int?
+  failedLogins  Int      @default(0)
+  lockedUntil   DateTime?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  sessions       WfSession[]
+  locationEvents WfLocationEvent[]
+  remoteRequests WfRemoteRequest[]
+  locationHolds  WfLocationHold[]
+  @@map("wf_employee")
+}
+
+model WfSession {
+  id              String     @id @default(cuid())
+  employeeId      String
+  employee        WfEmployee @relation(fields: [employeeId], references: [id])
+  locationHolds  WfLocationHold[]
+  startedAt       DateTime   @default(now())
+  endedAt         DateTime?
+  zone            String
+  remoteRequestId String?
+  startDistM      Int?
+
+  @@index([employeeId, endedAt])
+  @@map("wf_session")
+}
+
+model WfLocationEvent {
+  id         String     @id @default(cuid())
+  employeeId String
+  employee   WfEmployee @relation(fields: [employeeId], references: [id])
+  sessionId  String?
+  at         DateTime   @default(now())
+  kind       String
+  distM      Int
+  accM       Int
+  method     String     @default("BROWSER_GPS")
+  result     String
+
+  @@index([employeeId, at])
+  @@map("wf_location_event")
+}
+
+model WfRemoteRequest {
+  id          String     @id @default(cuid())
+  employeeId  String
+  employee    WfEmployee @relation(fields: [employeeId], references: [id])
+  reason      String
+  status      String     @default("PENDING")
+  decidedById String?
+  decidedAt   DateTime?
+  validFrom   DateTime?
+  validUntil  DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@index([employeeId, status])
+  @@map("wf_remote_request")
+}
+
+model WfAuditLog {
+  id       String   @id @default(cuid())
+  at       DateTime @default(now())
+  actorId  String
+  action   String
+  targetId String?
+  meta     Json?
+
+  @@index([targetId, at])
+  @@map("wf_audit_log")
+}
+
+
+// APPEND to prisma/schema.prisma AFTER the Piece 1 models. Additive only; no existing model is changed.
+// (Plain string ids are used instead of relations so the Piece 1 models do not need editing.)
+
+model WfDevice {
+  id         String    @id @default(cuid())
+  employeeId String
+  name       String
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([employeeId])
+  @@map("wf_device")
+}
+
+model WfPairingCode {
+  id         String    @id @default(cuid())
+  employeeId String
+  codeHash   String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@map("wf_pairing_code")
+}
+
+// One row per minute of a session: the app in front (or idle). Aggregated on the agent, so storage stays small.
+model WfAgentMinute {
+  id        String   @id @default(cuid())
+  sessionId String
+  deviceId  String
+  minute    DateTime
+  appName   String
+  idle      Boolean
+
+  @@unique([sessionId, minute])
+  @@index([sessionId])
+  @@map("wf_agent_minute")
+}
+// APPEND to prisma/schema.prisma after Pieces 1 and 3. Additive only.
+model WfHourlyReport {
+  id          String    @id @default(cuid())
+  employeeId  String
+  sessionId   String
+  periodStart DateTime
+  periodEnd   DateTime
+  activeMin   Int
+  idleMin     Int
+  topApps     Json
+  partial     Boolean   @default(false)
+  project     String?
+  noteEnc     String?
+  status      String    @default("DRAFT") // DRAFT | SUBMITTED
+  submittedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([sessionId, periodStart])
+  @@index([employeeId, periodStart])
+  @@map("wf_hourly_report")
+}
+
+model WfReportFile {
+  id         String   @id @default(cuid())
+  reportId   String
+  employeeId String
+  name       String
+  sizeB      Int
+  kind       String
+  storageKey String
+  createdAt  DateTime @default(now())
+
+  @@index([reportId])
+  @@map("wf_report_file")
+}
+// APPEND to prisma/schema.prisma after the earlier pieces. Additive only.
+
+// Latest known position of each OPEN session. One row per session, overwritten on each ping: no movement trail is kept.
+model WfLivePosition {
+  sessionId  String   @id
+  employeeId String
+  lat        Float
+  lng        Float
+  accM       Int
+  zone       String   // OFFICE | REMOTE | OUTSIDE | UNKNOWN
+  lastKnown  String   // last zone that was not UNKNOWN
+  netMatch   Boolean? // request came from an allowed office network (null = no networks configured)
+  updatedAt  DateTime @default(now())
+
+  @@index([employeeId])
+  @@map("wf_live_position")
+}
+
+model WfAlert {
+  id           String    @id @default(cuid())
+  employeeId   String
+  sessionId    String?
+  kind         String    // ZONE_EXIT
+  message      String
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+  resolvedById String?
+
+  @@index([resolvedAt, createdAt])
+  @@map("wf_alert")
+}
+
+
+// Office-zone exit hold.
+model WfLocationHold {
+  id           String     @id @default(cuid())
+  employeeId   String
+  employee     WfEmployee @relation(fields: [employeeId], references: [id], map: "wf_location_hold_employee_fk")
+  sessionId    String
+  session      WfSession  @relation(fields: [sessionId], references: [id], map: "wf_location_hold_session_fk")
+  startedAt    DateTime   @default(now())
+  endedAt      DateTime?
+  status       String     @default("PENDING")
+  explanation  String?
+  submittedAt  DateTime?
+  decisionById String?
+  decidedAt    DateTime?
+  decisionNote String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @default(now()) @updatedAt
+
+  @@index([employeeId, startedAt], map: "wf_location_hold_employee_started_idx")
+  @@index([sessionId, endedAt], map: "wf_location_hold_session_ended_idx")
+  @@index([status, createdAt], map: "wf_location_hold_status_created_idx")
+  @@map("wf_location_hold")
+}

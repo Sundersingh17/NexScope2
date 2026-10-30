@@ -1,0 +1,9 @@
+name: workforce-maintenance
+on:
+  schedule: [{ cron: "30 2 * * *" }]
+  workflow_dispatch:
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS -X POST "${{ secrets.WF_BASE_URL }}/api/workforce/jobs/maintenance" -H "x-cron-secret: ${{ secrets.WF_CRON_SECRET }}"
