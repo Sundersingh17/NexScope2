@@ -4,8 +4,59 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/workforce/client";
 
-const card =
-  "rounded-2xl border border-white/10 bg-neutral-900 p-5";
+type TopApp = {
+  app: string;
+  min: number;
+};
+
+type ReportFile = {
+  id: string;
+  name: string;
+  sizeB: number;
+};
+
+type Report = {
+  id: string;
+  project?: string | null;
+  status: string;
+  periodStart: string;
+  periodEnd: string;
+  employeeName?: string | null;
+  employee?: { name: string } | null;
+  activeMin: number | null;
+  idleMin: number | null;
+  note?: string | null;
+  topApps?: TopApp[] | null;
+  createdAt?: string | null;
+  submittedAt?: string | null;
+};
+
+type ReportDetailResponse = {
+  report: Report;
+  files?: ReportFile[];
+};
+
+type ApiErrorShape = {
+  status?: number;
+  message?: string;
+};
+
+function getError(error: unknown): ApiErrorShape {
+  if (typeof error !== "object" || error === null) {
+    return {};
+  }
+
+  const candidate = error as Record<string, unknown>;
+
+  return {
+    status:
+      typeof candidate.status === "number" ? candidate.status : undefined,
+    message:
+      typeof candidate.message === "string" ? candidate.message : undefined,
+  };
+}
+
+const card = "rounded-2xl border border-white/10 bg-neutral-900 p-5";
 
 const fmtDate = (value: string) =>
   new Date(value).toLocaleDateString([], {
@@ -45,55 +96,66 @@ const formatBytes = (bytes: number) => {
 
 export default function AdminReportDetail() {
   const router = useRouter();
-  const params = useParams();
+  const params = useParams<{ id: string | string[] }>();
 
-  const id = Array.isArray(params.id)
-    ? params.id[0]
-    : params.id;
+  const id = Array.isArray(params.id) ? params.id[0] : params.id;
 
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<ReportDetailResponse | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!id) return;
 
+    let cancelled = false;
+
     const load = async () => {
       try {
         setLoading(true);
 
-        const result = await api(
+        const result = await api<ReportDetailResponse>(
           `/admin/reports/${id}`
         );
 
-        setData(result);
-      } catch (e: any) {
-        if (e.status === 401) {
+        if (!cancelled) {
+          setData(result);
+          setErr("");
+        }
+      } catch (error: unknown) {
+        if (cancelled) return;
+
+        const { status, message } = getError(error);
+
+        if (status === 401) {
           router.push("/workforce/login");
           return;
         }
 
-        if (e.status === 403) {
+        if (status === 403) {
           router.push("/workforce");
           return;
         }
 
-        setErr(e.message || "Unable to load report");
+        setErr(message || "Unable to load report");
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    load();
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
   }, [id, router]);
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-neutral-950 text-neutral-100 p-4 md:p-8">
+      <main className="min-h-screen bg-neutral-950 p-4 text-neutral-100 md:p-8">
         <div className="mx-auto max-w-5xl">
-          <p className="text-sm text-neutral-400">
-            Loading report...
-          </p>
+          <p className="text-sm text-neutral-400">Loading report...</p>
         </div>
       </main>
     );
@@ -101,21 +163,18 @@ export default function AdminReportDetail() {
 
   if (err) {
     return (
-      <main className="min-h-screen bg-neutral-950 text-neutral-100 p-4 md:p-8">
+      <main className="min-h-screen bg-neutral-950 p-4 text-neutral-100 md:p-8">
         <div className="mx-auto max-w-5xl space-y-4">
           <button
+            type="button"
             className="text-sm text-indigo-300 hover:text-indigo-200"
-            onClick={() =>
-              router.push("/workforce/admin/reports")
-            }
+            onClick={() => router.push("/workforce/admin/reports")}
           >
             ← Back to Reports
           </button>
 
           <div className={card}>
-            <p className="text-sm text-red-400">
-              {err}
-            </p>
+            <p className="text-sm text-red-400">{err}</p>
           </div>
         </div>
       </main>
@@ -130,9 +189,7 @@ export default function AdminReportDetail() {
   const files = data.files ?? [];
 
   const status =
-    report.status === "SUBMITTED"
-      ? "Submitted"
-      : "Pending";
+    report.status === "SUBMITTED" ? "Submitted" : "Pending";
 
   const statusClass =
     report.status === "SUBMITTED"
@@ -140,33 +197,28 @@ export default function AdminReportDetail() {
       : "border-amber-500/20 bg-amber-500/10 text-amber-400";
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-100 p-4 md:p-8">
+    <main className="min-h-screen bg-neutral-950 p-4 text-neutral-100 md:p-8">
       <div className="mx-auto max-w-5xl space-y-5">
-
         {/* Header */}
         <header className="space-y-4">
           <button
+            type="button"
             className="text-sm text-indigo-300 hover:text-indigo-200"
-            onClick={() =>
-              router.push("/workforce/admin/reports")
-            }
+            onClick={() => router.push("/workforce/admin/reports")}
           >
             ← Back to Reports
           </button>
 
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-sm text-neutral-500">
-                Hourly Work Report
-              </p>
+              <p className="text-sm text-neutral-500">Hourly Work Report</p>
 
               <h1 className="mt-1 text-2xl font-semibold">
                 {report.project || "Work Report"}
               </h1>
 
               <p className="mt-2 text-sm text-neutral-400">
-                {fmtDate(report.periodStart)} ·{" "}
-                {fmtTime(report.periodStart)} –{" "}
+                {fmtDate(report.periodStart)} · {fmtTime(report.periodStart)} –{" "}
                 {fmtTime(report.periodEnd)}
               </p>
             </div>
@@ -191,9 +243,7 @@ export default function AdminReportDetail() {
               </p>
 
               <p className="mt-1 font-medium">
-                {report.employeeName ||
-                  report.employee?.name ||
-                  "Employee"}
+                {report.employeeName || report.employee?.name || "Employee"}
               </p>
             </div>
 
@@ -203,8 +253,7 @@ export default function AdminReportDetail() {
               </p>
 
               <p className="mt-1 text-sm">
-                {fmtTime(report.periodStart)} –{" "}
-                {fmtTime(report.periodEnd)}
+                {fmtTime(report.periodStart)} – {fmtTime(report.periodEnd)}
               </p>
             </div>
 
@@ -234,10 +283,7 @@ export default function AdminReportDetail() {
         <section className={card}>
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <h2 className="font-semibold">
-                Work Description
-              </h2>
-
+              <h2 className="font-semibold">Work Description</h2>
               <p className="mt-1 text-xs text-neutral-500">
                 Employee-submitted work summary
               </p>
@@ -254,10 +300,7 @@ export default function AdminReportDetail() {
         {/* Activity */}
         <section className={card}>
           <div className="mb-4">
-            <h2 className="font-semibold">
-              Activity Summary
-            </h2>
-
+            <h2 className="font-semibold">Activity Summary</h2>
             <p className="mt-1 text-xs text-neutral-500">
               Measured desktop activity for this report period
             </p>
@@ -265,71 +308,53 @@ export default function AdminReportDetail() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-xl border border-white/5 bg-black/20 p-4">
-              <p className="text-xs text-neutral-500">
-                Active time
-              </p>
-
+              <p className="text-xs text-neutral-500">Active time</p>
               <p className="mt-1 text-2xl font-semibold">
                 {report.activeMin ?? 0}m
               </p>
             </div>
 
             <div className="rounded-xl border border-white/5 bg-black/20 p-4">
-              <p className="text-xs text-neutral-500">
-                Idle time
-              </p>
-
+              <p className="text-xs text-neutral-500">Idle time</p>
               <p className="mt-1 text-2xl font-semibold">
                 {report.idleMin ?? 0}m
               </p>
             </div>
           </div>
 
-          {Array.isArray(report.topApps) &&
-            report.topApps.length > 0 && (
-              <div className="mt-5">
-                <p className="mb-3 text-sm font-medium">
-                  Top Applications
-                </p>
+          {report.topApps && report.topApps.length > 0 && (
+            <div className="mt-5">
+              <p className="mb-3 text-sm font-medium">Top Applications</p>
 
-                <div className="space-y-2">
-                  {report.topApps.map(
-                    (app: any, index: number) => (
-                      <div
-                        key={`${app.app}-${index}`}
-                        className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-4 py-3"
-                      >
-                        <span className="text-sm">
-                          {app.app}
-                        </span>
-
-                        <span className="text-sm text-neutral-400">
-                          {app.min ?? 0}m
-                        </span>
-                      </div>
-                    )
-                  )}
-                </div>
+              <div className="space-y-2">
+                {report.topApps.map((app, index) => (
+                  <div
+                    key={`${app.app}-${index}`}
+                    className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-4 py-3"
+                  >
+                    <span className="text-sm">{app.app}</span>
+                    <span className="text-sm text-neutral-400">
+                      {app.min ?? 0}m
+                    </span>
+                  </div>
+                ))}
               </div>
-            )}
+            </div>
+          )}
         </section>
 
         {/* Evidence */}
         <section className={card}>
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="font-semibold">
-                Work Evidence
-              </h2>
-
+              <h2 className="font-semibold">Work Evidence</h2>
               <p className="mt-1 text-xs text-neutral-500">
                 Files attached to this report
               </p>
             </div>
 
             <span className="text-xs text-neutral-500">
-              {files.length}{" "}
-              {files.length === 1 ? "file" : "files"}
+              {files.length} {files.length === 1 ? "file" : "files"}
             </span>
           </div>
 
@@ -341,7 +366,7 @@ export default function AdminReportDetail() {
             </div>
           ) : (
             <div className="space-y-2">
-              {files.map((file: any) => (
+              {files.map((file) => (
                 <div
                   key={file.id}
                   className="flex flex-col gap-3 rounded-xl border border-white/5 bg-black/20 p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -376,9 +401,7 @@ export default function AdminReportDetail() {
 
         {/* Metadata */}
         <section className={card}>
-          <h2 className="font-semibold">
-            Report Information
-          </h2>
+          <h2 className="font-semibold">Report Information</h2>
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
@@ -397,9 +420,7 @@ export default function AdminReportDetail() {
               </p>
 
               <p className="mt-1 text-sm text-neutral-300">
-                {report.createdAt
-                  ? fmtDateTime(report.createdAt)
-                  : "—"}
+                {report.createdAt ? fmtDateTime(report.createdAt) : "—"}
               </p>
             </div>
 
@@ -420,13 +441,10 @@ export default function AdminReportDetail() {
                 Status
               </p>
 
-              <p className="mt-1 text-sm text-neutral-300">
-                {status}
-              </p>
+              <p className="mt-1 text-sm text-neutral-300">{status}</p>
             </div>
           </div>
         </section>
-
       </div>
     </main>
   );

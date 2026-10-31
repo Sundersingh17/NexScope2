@@ -1,8 +1,46 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/workforce/client";
+
+type EmployeeOption = {
+  id: string;
+  name: string;
+  team: string | null;
+};
+
+type TopApp = {
+  app: string;
+  min?: number;
+};
+
+type ReportRow = {
+  id: string;
+  employee: string;
+  team: string | null;
+  periodStart: string;
+  periodEnd: string;
+  activeMin: number | null;
+  idleMin: number | null;
+  topApps?: TopApp[] | null;
+  files: number;
+  status: string;
+};
+
+type OverviewResponse = {
+  rows: EmployeeOption[];
+};
+
+type ReportsResponse = {
+  reports: ReportRow[];
+};
+
+type ApiErrorLike = {
+  status?: number;
+  message?: string;
+};
 
 const card = "rounded-2xl border border-white/10 bg-neutral-900 p-4";
 const sel =
@@ -14,97 +52,123 @@ const fmt = (d: string) =>
     minute: "2-digit",
   });
 
+function getApiError(error: unknown): ApiErrorLike {
+  if (typeof error !== "object" || error === null) {
+    return { message: "An unexpected error occurred." };
+  }
+
+  const candidate = error as { status?: unknown; message?: unknown };
+  return {
+    status:
+      typeof candidate.status === "number" ? candidate.status : undefined,
+    message:
+      typeof candidate.message === "string"
+        ? candidate.message
+        : "An unexpected error occurred.",
+  };
+}
+
 export default function AdminReports() {
   const router = useRouter();
 
-  const [emps, setEmps] = useState<any[]>([]);
+  const [emps, setEmps] = useState<EmployeeOption[]>([]);
+  const [employeesLoaded, setEmployeesLoaded] = useState(false);
   const [f, setF] = useState({
     employeeId: "",
     team: "",
     status: "",
   });
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<ReportRow[]>([]);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
+    setErr("");
+
     try {
-      if (!emps.length) {
-        setEmps((await api("/admin/overview")).rows);
+      if (!employeesLoaded) {
+        const overview = await api<OverviewResponse>("/admin/overview");
+        setEmps(overview.rows);
+        setEmployeesLoaded(true);
       }
 
-      const q = new URLSearchParams(
-        Object.entries(f).filter(
-          ([, v]) => v
-        ) as [string, string][]
+      const q = new URLSearchParams();
+      if (f.employeeId) q.set("employeeId", f.employeeId);
+      if (f.team) q.set("team", f.team);
+      if (f.status) q.set("status", f.status);
+
+      const result = await api<ReportsResponse>(
+        "/admin/reports?" + q.toString()
       );
 
-      setRows(
-        (await api("/admin/reports?" + q)).reports
-      );
-    } catch (e: any) {
-      if (e.status === 401) {
+      setRows(result.reports);
+    } catch (error: unknown) {
+      const apiError = getApiError(error);
+
+      if (apiError.status === 401) {
         router.push("/workforce/login");
-      } else if (e.status === 403) {
+      } else if (apiError.status === 403) {
         router.push("/workforce");
       } else {
-        setErr(e.message);
+        setErr(apiError.message ?? "Unable to load reports.");
       }
     }
-  }, [f, emps.length, router]);
+  }, [employeesLoaded, f, router]);
 
   useEffect(() => {
-    load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   const openReport = (id: string) => {
     router.push(`/workforce/admin/reports/${id}`);
   };
 
-  const teams = [...new Set(emps.map((e) => e.team))];
+  const teams = [...new Set(emps.map((employee) => employee.team).filter(
+    (team): team is string => Boolean(team)
+  ))];
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-100 p-4 md:p-8">
+    <main className="min-h-screen bg-neutral-950 p-4 text-neutral-100 md:p-8">
       <div className="mx-auto max-w-6xl space-y-4">
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold">
-              Hourly Reports
-            </h1>
-
+            <h1 className="text-xl font-semibold">Hourly Reports</h1>
             <p className="mt-1 text-sm text-neutral-400">
               Review employee work reports, activity and evidence.
             </p>
           </div>
 
-          <a
+          <Link
             className="text-sm text-indigo-300 hover:text-indigo-200"
             href="/workforce/admin"
           >
             ← Command Center
-          </a>
+          </Link>
         </header>
 
         <p className="text-sm text-neutral-400">
-          Opening a report or downloading a file is recorded,
-          and the employee can see it.
+          Opening a report or downloading a file is recorded, and the employee
+          can see it.
         </p>
 
         <div className="flex flex-wrap gap-2">
           <select
             className={sel}
             value={f.employeeId}
-            onChange={(e) =>
-              setF({
-                ...f,
-                employeeId: e.target.value,
-              })
+            onChange={(event) =>
+              setF((current) => ({
+                ...current,
+                employeeId: event.target.value,
+              }))
             }
           >
             <option value="">All employees</option>
-
-            {emps.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
+            {emps.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {employee.name}
               </option>
             ))}
           </select>
@@ -112,28 +176,29 @@ export default function AdminReports() {
           <select
             className={sel}
             value={f.team}
-            onChange={(e) =>
-              setF({
-                ...f,
-                team: e.target.value,
-              })
+            onChange={(event) =>
+              setF((current) => ({
+                ...current,
+                team: event.target.value,
+              }))
             }
           >
             <option value="">All teams</option>
-
-            {teams.map((t) => (
-              <option key={t}>{t}</option>
+            {teams.map((team) => (
+              <option key={team} value={team}>
+                {team}
+              </option>
             ))}
           </select>
 
           <select
             className={sel}
             value={f.status}
-            onChange={(e) =>
-              setF({
-                ...f,
-                status: e.target.value,
-              })
+            onChange={(event) =>
+              setF((current) => ({
+                ...current,
+                status: event.target.value,
+              }))
             }
           >
             <option value="">Any status</option>
@@ -142,11 +207,7 @@ export default function AdminReports() {
           </select>
         </div>
 
-        {err && (
-          <p className="text-sm text-red-400">
-            {err}
-          </p>
-        )}
+        {err && <p className="text-sm text-red-400">{err}</p>}
 
         <div className={card + " overflow-x-auto"}>
           <table className="w-full min-w-[820px] text-sm">
@@ -164,44 +225,33 @@ export default function AdminReports() {
             </thead>
 
             <tbody>
-              {rows.map((r) => (
+              {rows.map((report) => (
                 <tr
-                  key={r.id}
+                  key={report.id}
                   className="border-t border-white/5"
                 >
                   <td className="py-3">
-                    <div>{r.employee}</div>
-
+                    <div>{report.employee}</div>
                     <div className="text-xs text-neutral-500">
-                      {r.team}
+                      {report.team ?? "—"}
                     </div>
                   </td>
 
-                  <td className="py-3 whitespace-nowrap">
-                    {new Date(
-                      r.periodStart
-                    ).toLocaleDateString()}{" "}
-                    {fmt(r.periodStart)}
+                  <td className="whitespace-nowrap py-3">
+                    {new Date(report.periodStart).toLocaleDateString()}{" "}
+                    {fmt(report.periodStart)}
                     {"–"}
-                    {fmt(r.periodEnd)}
+                    {fmt(report.periodEnd)}
                   </td>
 
-                  <td className="py-3">
-                    {r.activeMin}m
-                  </td>
+                  <td className="py-3">{report.activeMin ?? 0}m</td>
+                  <td className="py-3">{report.idleMin ?? 0}m</td>
+                  <td className="py-3">{report.topApps?.[0]?.app ?? "—"}</td>
 
                   <td className="py-3">
-                    {r.idleMin}m
-                  </td>
-
-                  <td className="py-3">
-                    {r.topApps?.[0]?.app ?? "—"}
-                  </td>
-
-                  <td className="py-3">
-                    {r.files > 0 ? (
+                    {report.files > 0 ? (
                       <span className="text-indigo-300">
-                        📎 {r.files}
+                        📎 {report.files}
                       </span>
                     ) : (
                       "0"
@@ -210,22 +260,18 @@ export default function AdminReports() {
 
                   <td
                     className={
-                      r.status === "SUBMITTED"
+                      report.status === "SUBMITTED"
                         ? "py-3 text-emerald-400"
                         : "py-3 text-amber-400"
                     }
                   >
-                    {r.status === "SUBMITTED"
-                      ? "Submitted"
-                      : "Pending"}
+                    {report.status === "SUBMITTED" ? "Submitted" : "Pending"}
                   </td>
 
                   <td className="py-3 text-right">
                     <button
                       className="text-indigo-300 hover:text-indigo-200"
-                      onClick={() =>
-                        openReport(r.id)
-                      }
+                      onClick={() => openReport(report.id)}
                     >
                       Open →
                     </button>

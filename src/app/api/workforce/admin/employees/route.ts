@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/workforce/db";
 import { handle, HttpError } from "@/lib/workforce/http";
 import { requireAdmin } from "@/lib/workforce/auth";
@@ -18,8 +19,14 @@ export const POST = handle(async (req) => {
     const e = await prisma.wfEmployee.create({ data: { email: b.email.toLowerCase(), name: b.name, team: b.team, role: b.role, passwordHash: await hashPassword(b.password) } });
     await audit(admin.id, "EMPLOYEE_CREATED", e.id, { role: b.role });
     return Response.json({ id: e.id });
-  } catch (err: any) {
-    if (err?.code === "P2002") throw new HttpError(409, "That email already exists");
-    throw err;
+  } catch (err: unknown) {
+  if (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    err.code === "P2002"
+  ) {
+    throw new HttpError(409, "That email already exists");
   }
+
+  throw err;
+}
 });

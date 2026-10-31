@@ -3,7 +3,7 @@
 /**
  * Generic Workforce API helper.
  */
-export async function api<T = any>(
+export async function api<T = unknown>(
   path: string,
   init?: {
     method?: string;
@@ -112,9 +112,10 @@ export async function getPosition(): Promise<GeolocationPosition> {
      * Once Chrome gives us a position at or below this value,
      * we immediately use it.
      */
+    let timeoutId: number | undefined;
     const TARGET_ACCURACY_M = 100;
 
-    let timeoutId: number;
+
 
     const cleanup = () => {
       if (watchId !== null) {
@@ -122,8 +123,9 @@ export async function getPosition(): Promise<GeolocationPosition> {
         watchId = null;
       }
 
-      if (timeoutId) {
+      if (timeoutId !== undefined) {
         window.clearTimeout(timeoutId);
+        timeoutId = undefined;
       }
     };
 

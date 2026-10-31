@@ -100,9 +100,20 @@ export default function Analytics() {
     }
   }, [days, router]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+ useEffect(() => {
+  let cancelled = false;
+
+  const run = async () => {
+    if (cancelled) return;
+    await load();
+  };
+
+  void run();
+
+  return () => {
+    cancelled = true;
+  };
+}, [load]);
 
   const daily = data?.days ?? [];
   const teams = data?.teams ?? [];

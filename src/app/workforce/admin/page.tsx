@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/workforce/client";
 
@@ -29,11 +30,70 @@ type LocationHold = {
   } | null;
 };
 
+type WorkforceRow = {
+  id: string;
+  name: string;
+  team: string;
+  status: string;
+  alert?: string | null;
+  zone?: string | null;
+  startedAt: string | null;
+  activeMin: number;
+  idleMin: number;
+  agentOnline: boolean;
+};
+
+type WorkforceOverview = {
+  counts: {
+    working: number;
+    out: number;
+    offline: number;
+    pendingRequests: number;
+  };
+  rows: WorkforceRow[];
+};
+
+type RemoteRequest = {
+  id: string;
+  status: string;
+  reason: string;
+  employee: {
+    name: string;
+  };
+};
+
+type RemoteRequestsResponse = {
+  requests: RemoteRequest[];
+};
+
+type LocationHoldsResponse = {
+  holds: LocationHold[];
+};
+
+function getErrorStatus(error: unknown): number | undefined {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof error.status === "number"
+  ) {
+    return error.status;
+  }
+
+  return undefined;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "The action could not be completed.";
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
 
-  const [ov, setOv] = useState<any>(null);
-  const [reqs, setReqs] = useState<any[]>([]);
+  const [ov, setOv] = useState<WorkforceOverview | null>(null);
+  const [reqs, setReqs] = useState<RemoteRequest[]>([]);
   const [holds, setHolds] = useState<LocationHold[]>([]);
   const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState("");
@@ -49,35 +109,46 @@ export default function AdminDashboard() {
   const load = useCallback(async () => {
     try {
       const [overview, requests, holdData] = await Promise.all([
-        api("/admin/overview"),
-        api("/remote-requests"),
-        api("/admin/holds"),
+        api<WorkforceOverview>("/admin/overview"),
+        api<RemoteRequestsResponse>("/remote-requests"),
+        api<LocationHoldsResponse>("/admin/holds"),
       ]);
 
       setOv(overview);
       setReqs(requests.requests ?? []);
       setHolds(holdData.holds ?? []);
-    } catch (e: any) {
-      if (e.status === 401) {
+    } catch (error: unknown) {
+      const status = getErrorStatus(error);
+      if (status === 401) {
         router.push("/workforce/login");
-      } else if (e.status === 403) {
+      } else if (status === 403) {
         router.push("/workforce");
       } else {
-        setMsg(e.message || "Unable to refresh workforce data.");
+        setMsg(
+          error instanceof Error
+            ? error.message
+            : "Unable to refresh workforce data."
+        );
       }
     }
   }, [router]);
 
   useEffect(() => {
-    load();
+    const initialTimer = window.setTimeout(() => {
+      void load();
+    }, 0);
+    const interval = window.setInterval(() => {
+      void load();
+    }, 10000);
 
-    const timer = setInterval(load, 10000);
-
-    return () => clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+    };
   }, [load]);
 
   const run = async (
-    fn: () => Promise<any>,
+    fn: () => Promise<unknown>,
     ok: string
   ) => {
     setMsg("");
@@ -86,8 +157,8 @@ export default function AdminDashboard() {
       await fn();
       setMsg(ok);
       await load();
-    } catch (e: any) {
-      setMsg(e.message || "The action could not be completed.");
+    } catch (error: unknown) {
+      setMsg(getErrorMessage(error));
     }
   };
 
@@ -136,8 +207,12 @@ export default function AdminDashboard() {
       });
 
       await load();
-    } catch (e: any) {
-      setMsg(e.message || "Unable to review the location hold.");
+    } catch (error: unknown) {
+      setMsg(
+        error instanceof Error
+          ? error.message
+          : "Unable to review the location hold."
+      );
     } finally {
       setReviewingHold(null);
     }
@@ -180,14 +255,36 @@ export default function AdminDashboard() {
     router.push("/workforce/login");
   };
 
-  if (!ov) {
-    return (
-      <main className="min-h-screen bg-neutral-950 p-8 text-neutral-400">
-        Loading…
-        {msg && <p className="mt-3 text-sm text-amber-400">{msg}</p>}
-      </main>
-    );
-  }
+ if (!ov) {
+  return (
+    <main className="min-h-screen bg-neutral-950 p-8 text-neutral-400">
+      <div className="mx-auto max-w-lg space-y-4">
+        {msg ? (
+          <>
+            <h1 className="text-xl font-semibold text-red-400">
+              Could not load workforce dashboard
+            </h1>
+
+            <p className="text-sm text-neutral-300">{msg}</p>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMsg("");
+                void load();
+              }}
+              className="rounded-lg bg-indigo-500 px-4 py-2 font-medium text-white hover:bg-indigo-400"
+            >
+              Retry
+            </button>
+          </>
+        ) : (
+          <p>Loading workforce dashboard...</p>
+        )}
+      </div>
+    </main>
+  );
+}
 
   const pending = reqs.filter(
     (request) => request.status === "PENDING"
@@ -200,6 +297,17 @@ export default function AdminDashboard() {
   const rejectedHolds = holds.filter(
     (hold) => hold.status === "REJECTED"
   );
+
+  const stats: { key: string; value: number; color: string }[] = [
+    { key: "Working", value: ov.counts.working, color: "text-emerald-400" },
+    { key: "Checked out", value: ov.counts.out, color: "text-amber-400" },
+    { key: "Offline", value: ov.counts.offline, color: "text-neutral-400" },
+    {
+      key: "Pending requests",
+      value: ov.counts.pendingRequests,
+      color: "text-indigo-300",
+    },
+  ];
 
   return (
     <main className="min-h-screen bg-neutral-950 p-4 text-neutral-100 md:p-8">
@@ -225,12 +333,12 @@ export default function AdminDashboard() {
               My dashboard
             </a>
 
-            <a
+            <Link
               href="/workforce/admin/reports"
               className="rounded-lg bg-indigo-500 px-4 py-2 font-medium text-white transition hover:bg-indigo-400"
             >
               Hourly Reports
-            </a>
+            </Link>
 
             <button
               className="rounded-lg px-3 py-2 text-neutral-400 transition hover:bg-white/5 hover:text-white"
@@ -243,7 +351,7 @@ export default function AdminDashboard() {
 
         {/* QUICK NAVIGATION */}
         <div className="grid gap-3 md:grid-cols-2">
-          <a
+          <Link
             href="/workforce/admin/reports"
             className="group rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-4 transition hover:border-indigo-400/60 hover:bg-indigo-500/15"
           >
@@ -260,7 +368,7 @@ export default function AdminDashboard() {
                 →
               </span>
             </div>
-          </a>
+          </Link>
 
           <div className="rounded-2xl border border-white/10 bg-neutral-900 p-4">
             <p className="font-semibold text-white">
@@ -294,12 +402,7 @@ export default function AdminDashboard() {
 
         {/* STATS */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {[
-            ["Working", ov.counts.working, "text-emerald-400"],
-            ["Checked out", ov.counts.out, "text-amber-400"],
-            ["Offline", ov.counts.offline, "text-neutral-400"],
-            ["Pending requests", ov.counts.pendingRequests, "text-indigo-300"],
-          ].map(([key, value, color]: any) => (
+          {stats.map(({ key, value, color }) => (
             <div key={key} className={card}>
               <p className="text-xs text-neutral-400">{key}</p>
               <p className={`text-3xl font-semibold ${color}`}>
@@ -461,12 +564,12 @@ export default function AdminDashboard() {
         <div className={card + " overflow-x-auto"}>
           <div className="flex items-center justify-between">
             <b>Workforce</b>
-            <a
+            <Link
               href="/workforce/admin/reports"
               className="text-sm text-indigo-300 hover:text-indigo-200"
             >
               View reports →
-            </a>
+            </Link>
           </div>
 
           <table className="mt-2 w-full min-w-[640px] text-sm">
@@ -484,7 +587,7 @@ export default function AdminDashboard() {
             </thead>
 
             <tbody>
-              {ov.rows.map((r: any) => (
+              {ov.rows.map((r) => (
                 <tr
                   key={r.id}
                   className="border-t border-white/5"

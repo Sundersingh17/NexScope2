@@ -1,4 +1,4 @@
-
+﻿
 import { z } from "zod";
 import { prisma } from "@/lib/workforce/db";
 import { handle, HttpError } from "@/lib/workforce/http";
@@ -85,7 +85,7 @@ export const POST = handle(async (req) => {
       SELECT pg_advisory_xact_lock(
         hashtext('workforce-session-start'),
         hashtext(${e.id})
-      )
+      )::text
     `;
 
     const open = await tx.wfSession.findFirst({

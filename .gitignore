@@ -47,3 +47,7 @@ nexscope-staging-before-piece4-5.sql
 
 # Temporary Piece 4-5 extraction directory
 piece4-5-temp/
+# Exclude database exports from production releases
+nexscope-public-data.sql
+nexscope-staging-data.sql
+production-data.sql

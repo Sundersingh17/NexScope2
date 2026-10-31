@@ -4,6 +4,7 @@
 import "leaflet/dist/leaflet.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { LayerGroup, Map as LeafletMap } from "leaflet";
 import { api } from "@/lib/workforce/client";
 
 const card = "rounded-2xl border border-white/10 bg-neutral-900 p-4";
@@ -21,12 +22,81 @@ const FLAG: Record<string, string> = {
   AGENT_OFFLINE: "Agent offline",
 };
 
-function locationAge(updatedAt: string | number | Date) {
+type LivePosition = {
+  lat: number;
+  lng: number;
+  accM: number;
+  zone: string;
+  netMatch: boolean | null;
+  updatedAt: string;
+};
+
+type LiveRow = {
+  employeeId: string;
+  name: string;
+  team: string;
+  startedAt: string;
+  sessionZone: string;
+  position: LivePosition | null;
+  flags: string[];
+};
+
+type LiveAlert = {
+  id: string;
+  employee: string;
+  kind: string;
+  message: string;
+  createdAt: string;
+};
+
+type Office = {
+  name: string;
+  lat: number;
+  lng: number;
+  radiusM: number;
+  allowedIps: string[];
+};
+
+type LiveData = {
+  office: Office | null;
+  yourIp: string;
+  rows: LiveRow[];
+  alerts: LiveAlert[];
+};
+
+type OfficeForm = {
+  lat: string;
+  lng: string;
+  radiusM: string;
+  ips: string;
+};
+
+function errorStatus(error: unknown): number | undefined {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof error.status === "number"
+  ) {
+    return error.status;
+  }
+
+  return undefined;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function locationAge(updatedAt: string | number | Date): string {
   const timestamp = new Date(updatedAt).getTime();
 
   if (!Number.isFinite(timestamp)) return "update time unavailable";
 
-  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
+  const minutes = Math.max(
+    0,
+    Math.floor((Date.now() - timestamp) / 60_000),
+  );
 
   if (minutes < 1) return "updated less than a minute ago";
   if (minutes === 1) return "updated 1 minute ago";
@@ -34,147 +104,213 @@ function locationAge(updatedAt: string | number | Date) {
   return `updated ${minutes} minutes ago`;
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    const entities: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+
+    return entities[character] ?? character;
+  });
+}
+
+function officeFormFromData(office: Office | null): OfficeForm {
+  if (!office) {
+    return { lat: "", lng: "", radiusM: "150", ips: "" };
+  }
+
+  return {
+    lat: String(office.lat),
+    lng: String(office.lng),
+    radiusM: String(office.radiusM),
+    ips: office.allowedIps.join(", "),
+  };
+}
+
 export default function LiveMap() {
   const router = useRouter();
 
-  const [d, setD] = useState<any>(null);
+  const [d, setD] = useState<LiveData | null>(null);
   const [msg, setMsg] = useState("");
-  const [form, setForm] = useState<any>(null);
+  const [form, setForm] = useState<OfficeForm | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapVersion, setMapVersion] = useState(0);
 
   const el = useRef<HTMLDivElement>(null);
-  const map = useRef<any>(null);
-  const layer = useRef<any>(null);
-  const LRef = useRef<any>(null);
+  const map = useRef<LeafletMap | null>(null);
+  const layer = useRef<LayerGroup | null>(null);
+  const LRef = useRef<typeof import("leaflet") | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const r = await api("/admin/live");
-      setD(r);
+      const result = await api<LiveData>("/admin/live");
 
-      setForm((f: any) =>
-        f ??
-        (r.office
-          ? {
-              lat: String(r.office.lat),
-              lng: String(r.office.lng),
-              radiusM: String(r.office.radiusM),
-              ips: r.office.allowedIps.join(", "),
-            }
-          : { lat: "", lng: "", radiusM: "150", ips: "" }),
-      );
-    } catch (e: any) {
-      if (e.status === 401) router.push("/workforce/login");
-      else if (e.status === 403) router.push("/workforce");
+      setD(result);
+      setForm((current) => current ?? officeFormFromData(result.office));
+    } catch (error: unknown) {
+      const status = errorStatus(error);
+
+      if (status === 401) {
+        router.push("/workforce/login");
+      } else if (status === 403) {
+        router.push("/workforce");
+      } else {
+        setMsg(errorMessage(error, "Could not load live locations"));
+      }
     }
   }, [router]);
 
+  // Load immediately and refresh every 15 seconds.
   useEffect(() => {
-    load();
-    const t = setInterval(load, 15_000);
-    return () => clearInterval(t);
-  }, [load]);
-
-  // Create the map once the office location is available.
-  useEffect(() => {
-    if (!d?.office || map.current || !el.current) return;
-
     let cancelled = false;
 
-    (async () => {
-      const L = (await import("leaflet")).default;
+    const refresh = async () => {
+      if (cancelled) return;
+      await load();
+    };
 
-      if (cancelled || !el.current) return;
+    void refresh();
 
-      LRef.current = L;
-
-      const instance = L.map(el.current).setView(
-        [d.office.lat, d.office.lng],
-        17,
-      );
-
-      map.current = instance;
-
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: "© OpenStreetMap contributors",
-      }).addTo(instance);
-
-      layer.current = L.layerGroup().addTo(instance);
-
-      setD((current: any) => (current ? { ...current } : current));
-    })();
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, 15_000);
 
     return () => {
       cancelled = true;
-      map.current?.remove();
-      map.current = null;
-      layer.current = null;
-      LRef.current = null;
+      window.clearInterval(timer);
     };
-    // Map creation is tied to the office coordinates.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [d?.office?.lat, d?.office?.lng]);
+  }, [load]);
 
-  const focusEmployee = (employee: any) => {
-    if (!map.current || !employee.position) return;
+  const officeLat = d?.office?.lat;
+  const officeLng = d?.office?.lng;
+
+  // Initialize Leaflet only after the office coordinates and map container exist.
+  useEffect(() => {
+    if (
+      officeLat == null ||
+      officeLng == null ||
+      !el.current
+    ) {
+      setMapReady(false);
+      return;
+    }
+
+    let cancelled = false;
+    let createdMap: LeafletMap | null = null;
+
+    const initializeMap = async () => {
+      try {
+        const L = (await import("leaflet")).default;
+
+        if (cancelled || !el.current) return;
+
+        const instance = L.map(el.current).setView(
+          [officeLat, officeLng],
+          17,
+        );
+
+        createdMap = instance;
+        map.current = instance;
+        LRef.current = L;
+
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: "© OpenStreetMap contributors",
+        }).addTo(instance);
+
+        layer.current = L.layerGroup().addTo(instance);
+
+        if (!cancelled) {
+          setMapReady(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setMsg("Could not initialize the map. Please refresh the page.");
+        }
+      }
+    };
+
+    void initializeMap();
+
+    return () => {
+      cancelled = true;
+
+      createdMap?.remove();
+
+      if (map.current === createdMap) {
+        map.current = null;
+        layer.current = null;
+        LRef.current = null;
+      }
+    };
+  }, [officeLat, officeLng, mapVersion]);
+
+  const focusEmployee = useCallback((employee: LiveRow) => {
+    const position = employee.position;
+
+    if (!map.current || !position) return;
 
     setSelectedEmployee(employee.employeeId);
 
-    map.current.flyTo(
-      [employee.position.lat, employee.position.lng],
-      17,
-      { duration: 1.2 },
-    );
-  };
-
-  const focusOffice = () => {
-    if (!map.current || !d?.office) return;
-
-    setSelectedEmployee(null);
-
-    map.current.flyTo([d.office.lat, d.office.lng], 17, {
+    map.current.flyTo([position.lat, position.lng], 17, {
       duration: 1.2,
     });
-  };
+  }, []);
 
-  // Redraw markers when data or employee selection changes.
+  const focusOffice = () => {
+  if (!map.current || !d?.office) return;
+
+  setSelectedEmployee(null);
+
+  map.current.flyTo([d.office.lat, d.office.lng], 17, {
+    duration: 1.2,
+  });
+};
+
+  // Redraw the geofence, accuracy rings, markers and selected employee popup.
   useEffect(() => {
     const L = LRef.current;
+    const currentLayer = layer.current;
+    const office = d?.office;
 
-    if (!L || !layer.current || !d?.office) return;
+    if (!mapReady || !L || !currentLayer || !office) return;
 
-    layer.current.clearLayers();
+    currentLayer.clearLayers();
 
-    L.circle([d.office.lat, d.office.lng], {
-      radius: d.office.radiusM,
+    L.circle([office.lat, office.lng], {
+      radius: office.radiusM,
       color: "#818cf8",
       weight: 2,
       dashArray: "6",
       fillOpacity: 0.08,
-    }).addTo(layer.current);
+    }).addTo(currentLayer);
 
-    d.rows.forEach((r: any) => {
-      if (!r.position) return;
+    d.rows.forEach((row) => {
+      const position = row.position;
 
-      const isStale = r.flags?.includes("LOCATION_UNKNOWN") ?? false;
-      const isSelected = selectedEmployee === r.employeeId;
+      if (!position) return;
 
-      const zoneColor = COLOR[r.position.zone] ?? COLOR.UNKNOWN;
+      const isStale = row.flags.includes("LOCATION_UNKNOWN");
+      const isSelected = selectedEmployee === row.employeeId;
+      const zoneColor = COLOR[position.zone] ?? COLOR.UNKNOWN;
       const markerColor = isStale ? "#fbbf24" : zoneColor;
 
-      // Keep the last known accuracy ring visible, but fade it if stale.
-      L.circle([r.position.lat, r.position.lng], {
-        radius: Math.max(0, Number(r.position.accM) || 0),
+      L.circle([position.lat, position.lng], {
+        radius: Math.max(0, Number(position.accM) || 0),
         color: markerColor,
         weight: 1,
         opacity: isStale ? 0.7 : 0.4,
         dashArray: isStale ? "4 5" : undefined,
         fillOpacity: isStale ? 0.025 : 0.08,
-      }).addTo(layer.current);
+      }).addTo(currentLayer);
 
       const marker = L.circleMarker(
-        [r.position.lat, r.position.lng],
+        [position.lat, position.lng],
         {
           radius: isSelected ? 11 : 8,
           color: markerColor,
@@ -186,79 +322,110 @@ export default function LiveMap() {
       );
 
       const status = isStale ? " · LOCATION STALE" : "";
-      const tooltipName = String(r.name).replace(/[&<>"']/g, "");
       const tooltipText =
-        `${tooltipName} · ${String(r.position.zone).toLowerCase()}${status}`;
+        `${escapeHtml(row.name)} · ` +
+        `${escapeHtml(position.zone.toLowerCase())}${status}`;
 
       marker
         .bindTooltip(tooltipText)
-        .on("click", () => focusEmployee(r))
-        .addTo(layer.current);
+        .on("click", () => focusEmployee(row))
+        .addTo(currentLayer);
 
       if (isSelected) {
-        const safeName = String(r.name).replace(/[&<>"']/g, "");
-        const age = locationAge(r.position.updatedAt);
+        const age = locationAge(position.updatedAt);
         const popupStatus = isStale
           ? "<br/><strong>LOCATION STALE</strong>"
           : "<br/>Location status: recent";
 
         marker
           .bindPopup(
-            `<strong>${safeName}</strong><br/>` +
-              `${String(r.position.zone).toLowerCase()}<br/>` +
-              `${age}${popupStatus}`,
+            `<strong>${escapeHtml(row.name)}</strong><br/>` +
+              `${escapeHtml(position.zone.toLowerCase())}<br/>` +
+              `${escapeHtml(age)}${popupStatus}`,
           )
           .openPopup();
       }
     });
-  }, [d, selectedEmployee]);
+  }, [d, selectedEmployee, mapReady, focusEmployee]);
 
   const resolve = async (id: string) => {
+    setMsg("");
+
     try {
-      await api(`/admin/alerts/${id}`, {
+      await api(`/admin/alerts/${encodeURIComponent(id)}`, {
         method: "PATCH",
         body: {},
       });
+
       await load();
-    } catch (e: any) {
-      setMsg(e.message || "Could not resolve alert");
+      setMsg("Alert resolved");
+    } catch (error: unknown) {
+      setMsg(errorMessage(error, "Could not resolve alert"));
     }
   };
 
   const saveOffice = async () => {
+    if (!form) return;
+
+    const lat = Number(form.lat);
+    const lng = Number(form.lng);
+    const radiusM = Number(form.radiusM);
+
+    if (
+      !form.lat.trim() ||
+      !form.lng.trim() ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      setMsg("Enter a valid latitude and longitude.");
+      return;
+    }
+
+    if (
+      !form.radiusM.trim() ||
+      !Number.isFinite(radiusM) ||
+      radiusM <= 0
+    ) {
+      setMsg("Enter a valid positive office radius.");
+      return;
+    }
+
     setMsg("");
 
     try {
       await api("/admin/office", {
         method: "PATCH",
         body: {
-          lat: Number(form.lat),
-          lng: Number(form.lng),
-          radiusM: Number(form.radiusM),
+          lat,
+          lng,
+          radiusM,
           allowedIps: form.ips
             .split(",")
-            .map((s: string) => s.trim())
+            .map((value) => value.trim())
             .filter(Boolean),
         },
       });
 
       setMsg("Office saved");
 
-      map.current?.remove();
-      map.current = null;
-      layer.current = null;
-      LRef.current = null;
+      // Recreate the map even if the office coordinates did not change.
+      setMapReady(false);
+      setMapVersion((version) => version + 1);
 
       await load();
-    } catch (e: any) {
-      setMsg(e.message || "Could not save office settings");
+    } catch (error: unknown) {
+      setMsg(errorMessage(error, "Could not save office settings"));
     }
   };
 
   if (!d) {
     return (
       <main className="min-h-screen bg-neutral-950 p-8 text-neutral-400">
-        Loading…
+        {msg || "Loading…"}
       </main>
     );
   }
@@ -275,7 +442,10 @@ export default function LiveMap() {
             </p>
           </div>
 
-          <a className="text-sm text-indigo-300" href="/workforce/admin">
+          <a
+            className="text-sm text-indigo-300"
+            href="/workforce/admin"
+          >
             ← Command Center
           </a>
         </header>
@@ -304,30 +474,22 @@ export default function LiveMap() {
             />
           </div>
         ) : (
-          <div className={card + " text-sm text-neutral-400"}>
+          <div className={`${card} text-sm text-neutral-400`}>
             Set the office location below to see the map.
           </div>
         )}
 
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-neutral-400">
-          <span>
-            <span className="text-emerald-400">●</span> Office
-          </span>
-          <span>
-            <span className="text-blue-400">●</span> Approved remote
-          </span>
-          <span>
-            <span className="text-red-400">●</span> Outside
-          </span>
-          <span>
-            <span className="text-amber-300">◌</span> Location stale
-          </span>
+          <span><span className="text-emerald-400">●</span> Office</span>
+          <span><span className="text-blue-400">●</span> Approved remote</span>
+          <span><span className="text-red-400">●</span> Outside</span>
+          <span><span className="text-amber-300">◌</span> Location stale</span>
           <span>Dashed circle = office geofence</span>
           <span>Thin ring = GPS accuracy</span>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <section className={card + " space-y-2"}>
+          <section className={`${card} space-y-2`}>
             <b>Working now ({d.rows.length})</b>
 
             {d.rows.length === 0 && (
@@ -336,23 +498,22 @@ export default function LiveMap() {
               </p>
             )}
 
-            {d.rows.map((r: any) => {
-              const isStale =
-                r.flags?.includes("LOCATION_UNKNOWN") ?? false;
+            {d.rows.map((row) => {
+              const isStale = row.flags.includes("LOCATION_UNKNOWN");
 
               return (
                 <div
-                  key={r.employeeId}
-                  role={r.position ? "button" : undefined}
-                  tabIndex={r.position ? 0 : undefined}
-                  onClick={() => focusEmployee(r)}
-                  onKeyDown={(e) => {
+                  key={row.employeeId}
+                  role={row.position ? "button" : undefined}
+                  tabIndex={row.position ? 0 : undefined}
+                  onClick={() => focusEmployee(row)}
+                  onKeyDown={(event) => {
                     if (
-                      r.position &&
-                      (e.key === "Enter" || e.key === " ")
+                      row.position &&
+                      (event.key === "Enter" || event.key === " ")
                     ) {
-                      e.preventDefault();
-                      focusEmployee(r);
+                      event.preventDefault();
+                      focusEmployee(row);
                     }
                   }}
                   className={`rounded-lg border p-2 text-sm ${
@@ -360,57 +521,57 @@ export default function LiveMap() {
                       ? "border-amber-400/40 bg-amber-400/5"
                       : "border-white/10"
                   } ${
-                    r.position
+                    row.position
                       ? "cursor-pointer transition hover:border-indigo-400 hover:bg-white/5"
                       : "opacity-70"
                   } ${
-                    selectedEmployee === r.employeeId
+                    selectedEmployee === row.employeeId
                       ? "border-indigo-400 bg-indigo-500/10"
                       : ""
                   }`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <b>{r.name}</b>
+                    <b>{row.name}</b>
 
                     <span
                       style={{
                         color: isStale
                           ? "#fbbf24"
-                          : COLOR[r.position?.zone ?? "UNKNOWN"],
+                          : COLOR[row.position?.zone ?? "UNKNOWN"],
                       }}
                     >
                       {isStale
                         ? "location stale"
-                        : (r.position?.zone ?? "UNKNOWN").toLowerCase()}
+                        : (row.position?.zone ?? "UNKNOWN").toLowerCase()}
                     </span>
                   </div>
 
                   <div className="text-xs text-neutral-400">
-                    {r.team} · since{" "}
-                    {new Date(r.startedAt).toLocaleTimeString([], {
+                    {row.team} · since{" "}
+                    {new Date(row.startedAt).toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
-                    {r.position
-                      ? ` · ±${r.position.accM} m · ${locationAge(r.position.updatedAt)}`
+                    {row.position
+                      ? ` · ±${row.position.accM} m · ${locationAge(row.position.updatedAt)}`
                       : " · no location recorded yet"}
-                    {r.position?.netMatch === true
+                    {row.position?.netMatch === true
                       ? " · office network ✓"
-                      : r.position?.netMatch === false
+                      : row.position?.netMatch === false
                         ? " · not on office network"
                         : ""}
                   </div>
 
-                  {r.flags?.map((f: string) => (
+                  {row.flags.map((flag) => (
                     <div
-                      key={f}
+                      key={flag}
                       className={`text-xs ${
-                        f === "LOCATION_UNKNOWN"
+                        flag === "LOCATION_UNKNOWN"
                           ? "text-amber-300"
                           : "text-red-300"
                       }`}
                     >
-                      ⚠ {FLAG[f] ?? f}
+                      ⚠ {FLAG[flag] ?? flag}
                     </div>
                   ))}
 
@@ -425,28 +586,29 @@ export default function LiveMap() {
             })}
           </section>
 
-          <section className={card + " space-y-2"}>
+          <section className={`${card} space-y-2`}>
             <b>Open alerts ({d.alerts.length})</b>
 
             {d.alerts.length === 0 && (
               <p className="text-sm text-neutral-400">No open alerts.</p>
             )}
 
-            {d.alerts.map((a: any) => (
+            {d.alerts.map((alert) => (
               <div
-                key={a.id}
+                key={alert.id}
                 className="flex items-center justify-between gap-3 rounded-lg border border-white/10 p-2 text-sm"
               >
                 <span>
-                  <b>{a.employee}</b> — {a.message}
+                  <b>{alert.employee}</b> — {alert.message}
                   <div className="text-xs text-neutral-400">
-                    {new Date(a.createdAt).toLocaleString()}
+                    {new Date(alert.createdAt).toLocaleString()}
                   </div>
                 </span>
 
                 <button
+                  type="button"
                   className="text-xs text-indigo-300"
-                  onClick={() => resolve(a.id)}
+                  onClick={() => void resolve(alert.id)}
                 >
                   Resolve
                 </button>
@@ -464,27 +626,39 @@ export default function LiveMap() {
             <input
               className={inp}
               placeholder="Latitude"
+              inputMode="decimal"
               value={form?.lat ?? ""}
-              onChange={(e) =>
-                setForm({ ...form, lat: e.target.value })
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...(current ?? officeFormFromData(d.office)),
+                  lat: event.target.value,
+                }))
               }
             />
 
             <input
               className={inp}
               placeholder="Longitude"
+              inputMode="decimal"
               value={form?.lng ?? ""}
-              onChange={(e) =>
-                setForm({ ...form, lng: e.target.value })
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...(current ?? officeFormFromData(d.office)),
+                  lng: event.target.value,
+                }))
               }
             />
 
             <input
               className={inp}
               placeholder="Radius (m)"
+              inputMode="decimal"
               value={form?.radiusM ?? ""}
-              onChange={(e) =>
-                setForm({ ...form, radiusM: e.target.value })
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...(current ?? officeFormFromData(d.office)),
+                  radiusM: event.target.value,
+                }))
               }
             />
 
@@ -492,8 +666,11 @@ export default function LiveMap() {
               className={inp}
               placeholder="Office public IPs, comma separated"
               value={form?.ips ?? ""}
-              onChange={(e) =>
-                setForm({ ...form, ips: e.target.value })
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...(current ?? officeFormFromData(d.office)),
+                  ips: event.target.value,
+                }))
               }
             />
           </div>
@@ -506,14 +683,17 @@ export default function LiveMap() {
           </p>
 
           <button
+            type="button"
             className="mt-2 rounded-lg bg-indigo-500 px-4 py-1.5 text-sm font-medium"
-            onClick={saveOffice}
+            onClick={() => void saveOffice()}
           >
             Save office
           </button>
 
           {msg && (
-            <span className="ml-3 text-sm text-indigo-300">{msg}</span>
+            <p role="status" className="mt-2 text-sm text-indigo-300">
+              {msg}
+            </p>
           )}
         </details>
       </div>

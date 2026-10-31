@@ -105,10 +105,10 @@ function isAllowedOrigin(origin: string) {
 }
 
 // Wrap every route: feature flag, same-origin check for writes, uniform errors.
-export function handle(
-  fn: (req: Request, ctx: any) => Promise<Response>
+export function handle<Context = unknown>(
+  fn: (req: Request, ctx: Context) => Promise<Response>
 ) {
-  return async (req: Request, ctx: any) => {
+  return async (req: Request, ctx: Context) => {
     try {
       if (process.env.WF_ENABLED !== "true") {
         throw new HttpError(404, "Not found");

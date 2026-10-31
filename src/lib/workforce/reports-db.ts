@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { hourWindows, summarize } from "./reports";
 
@@ -12,7 +13,7 @@ export async function ensureReports(s: { id: string; employeeId: string; started
     const rows = await prisma.wfAgentMinute.findMany({ where: { sessionId: s.id, minute: { gte: w.start, lt: w.end } }, select: { appName: true, idle: true } });
     const m = summarize(rows);
     await prisma.wfHourlyReport.createMany({
-      data: [{ employeeId: s.employeeId, sessionId: s.id, periodStart: w.start, periodEnd: w.end, activeMin: m.active, idleMin: m.idle, topApps: m.topApps as any, partial: w.partial }],
+      data: [{ employeeId: s.employeeId, sessionId: s.id, periodStart: w.start, periodEnd: w.end, activeMin: m.active, idleMin: m.idle, topApps: m.topApps as Prisma.InputJsonValue, partial: w.partial }],
       skipDuplicates: true,
     });
   }

@@ -8,7 +8,6 @@ export const GET = handle(async (req) => {
   await requireAdmin();
   const [office, open] = await Promise.all([prisma.wfOffice.findFirst(), prisma.wfSession.findMany({ where: { endedAt: null } })]);
   const ids = open.map((s) => s.id);
-  await prisma.wfLivePosition.deleteMany({ where: { sessionId: { notIn: ids } } }); // nothing is kept after a session ends
   const [pos, emps, devs, alerts] = await Promise.all([
     prisma.wfLivePosition.findMany({ where: { sessionId: { in: ids } } }),
     prisma.wfEmployee.findMany({ where: { id: { in: open.map((s) => s.employeeId) } }, select: { id: true, name: true, team: true } }),

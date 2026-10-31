@@ -1,9 +1,83 @@
 ﻿"use client";
 
 import LocationReporter from "@/components/workforce/location-reporter";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, getPosition } from "@/lib/workforce/client";
+
+type LocationHold = {
+  status: string;
+  decisionNote: string | null;
+  submittedAt: string | null;
+};
+
+type OpenSession = {
+  startedAt: string;
+  active: number;
+  idle: number;
+  hold: LocationHold | null;
+};
+
+type Employee = {
+  name: string;
+  team: string;
+  role: string;
+};
+
+type Device = {
+  id: string;
+  name: string;
+  lastSeenAt: string | null;
+};
+
+type MeResponse = {
+  employee: Employee;
+  openSession: OpenSession | null;
+  devices: Device[];
+};
+
+type AttendanceSession = {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  active: number;
+  idle: number;
+  zone: string | null;
+};
+
+type HistoryResponse = {
+  sessions: AttendanceSession[];
+};
+
+type PairDeviceResponse = {
+  code: string;
+  expiresAt: string;
+};
+
+type ApiErrorShape = {
+  status?: number;
+  message?: string;
+};
+
+function getError(error: unknown): ApiErrorShape {
+  if (typeof error !== "object" || error === null) {
+    return {};
+  }
+
+  const candidate = error as Record<string, unknown>;
+  return {
+    status:
+      typeof candidate.status === "number" ? candidate.status : undefined,
+    message:
+      typeof candidate.message === "string" ? candidate.message : undefined,
+  };
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  const { message } = getError(error);
+  return message || fallback;
+}
 
 const hms = (ms: number) => {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -16,18 +90,15 @@ const hms = (ms: number) => {
 const dur = (m: number) =>
   `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 
-const card =
-  "rounded-2xl border border-white/10 bg-neutral-900 p-4";
-
-const btn =
-  "rounded-lg px-4 py-2 font-medium disabled:opacity-50";
+const card = "rounded-2xl border border-white/10 bg-neutral-900 p-4";
+const btn = "rounded-lg px-4 py-2 font-medium disabled:opacity-50";
 
 export default function EmployeeDashboard() {
   const router = useRouter();
 
-  const [me, setMe] = useState<any>(null);
-  const [hist, setHist] = useState<any[]>([]);
-  const [now, setNow] = useState(Date.now());
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const [hist, setHist] = useState<AttendanceSession[]>([]);
+  const [now, setNow] = useState(() => Date.now());
 
   const [msg, setMsg] = useState<{
     t: "err" | "ok";
@@ -37,37 +108,72 @@ export default function EmployeeDashboard() {
   const [blocked, setBlocked] = useState(false);
   const [reason, setReason] = useState("");
 
-  const [code, setCode] = useState<{
-    code: string;
-    expiresAt: string;
-  } | null>(null);
-
+  const [code, setCode] = useState<PairDeviceResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [explanation, setExplanation] = useState("");
-const [holdBusy, setHoldBusy] = useState(false);
+  const [holdBusy, setHoldBusy] = useState(false);
+
+  const loadInProgressRef = useRef(false);
+  const mountedRef = useRef(false);
+  const hasLoadedRef = useRef(false);
 
   const load = useCallback(async () => {
+    if (loadInProgressRef.current) return;
+
+    loadInProgressRef.current = true;
+
     try {
-      setMe(await api("/me"));
-      setHist((await api("/sessions?limit=10")).sessions);
-    } catch (e: any) {
-      if (e.status === 401) {
+      const [profile, history] = await Promise.all([
+        api<MeResponse>("/me"),
+        api<HistoryResponse>("/sessions?limit=10"),
+      ]);
+
+      if (!mountedRef.current) return;
+
+      setMe(profile);
+      setHist(history.sessions);
+      hasLoadedRef.current = true;
+    } catch (error: unknown) {
+      if (!mountedRef.current) return;
+
+      const { status } = getError(error);
+
+      if (status === 401) {
         router.push("/workforce/login");
+      } else if (!hasLoadedRef.current) {
+        setMsg({
+          t: "err",
+          s: getErrorMessage(
+            error,
+            "Unable to load your dashboard. Please try again.",
+          ),
+        });
       }
+    } finally {
+      loadInProgressRef.current = false;
     }
   }, [router]);
 
   useEffect(() => {
-    load();
+    mountedRef.current = true;
 
-    const a = setInterval(load, 15000);
-    const b = setInterval(() => setNow(Date.now()), 1000);
+    void load();
+
+    const refreshInterval = window.setInterval(() => {
+      void load();
+    }, 15000);
+
+    const clockInterval = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
 
     return () => {
-      clearInterval(a);
-      clearInterval(b);
+      mountedRef.current = false;
+      window.clearInterval(refreshInterval);
+      window.clearInterval(clockInterval);
     };
   }, [load]);
+
 
   async function act(fn: () => Promise<void>) {
     setMsg(null);
@@ -76,13 +182,14 @@ const [holdBusy, setHoldBusy] = useState(false);
     try {
       await fn();
       await load();
-    } catch (e: any) {
+    } catch (error: unknown) {
+      const { status } = getError(error);
       setMsg({
         t: "err",
-        s: e.message,
+        s: getErrorMessage(error, "The action could not be completed."),
       });
 
-      if (e.status === 403) {
+      if (status === 403) {
         setBlocked(true);
       }
     } finally {
@@ -94,13 +201,13 @@ const [holdBusy, setHoldBusy] = useState(false);
     act(async () => {
       setBlocked(false);
 
-      const p = await getPosition();
+      const position = await getPosition();
 
       await api("/session/start", {
         body: {
-          lat: p.coords.latitude,
-          lng: p.coords.longitude,
-          accuracy: p.coords.accuracy,
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy,
         },
       });
 
@@ -112,34 +219,32 @@ const [holdBusy, setHoldBusy] = useState(false);
 
   const checkOut = () =>
     act(async () => {
-      let body: any = {};
+      let body: { lat?: number; lng?: number; accuracy?: number } = {};
 
       try {
-        const p = await getPosition();
+        const position = await getPosition();
 
         body = {
-          lat: p.coords.latitude,
-          lng: p.coords.longitude,
-          accuracy: p.coords.accuracy,
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy,
         };
-      } catch {}
+      } catch {
+        // Checking out remains possible if location access is unavailable.
+      }
 
-      await api("/session/end", {
-        body,
-      });
+      await api("/session/end", { body });
 
       setMsg({
         t: "ok",
-        s: "Checked out ΓÇö monitoring stopped",
+        s: "Checked out — monitoring stopped",
       });
     });
 
   const requestRemote = () =>
     act(async () => {
       await api("/remote-requests", {
-        body: {
-          reason,
-        },
+        body: { reason },
       });
 
       setBlocked(false);
@@ -153,12 +258,11 @@ const [holdBusy, setHoldBusy] = useState(false);
 
   const pair = () =>
     act(async () => {
-      setCode(
-        await api("/devices/pair", {
-          method: "POST",
-          body: {},
-        })
-      );
+      const pairing = await api<PairDeviceResponse>("/devices/pair", {
+        method: "POST",
+        body: {},
+      });
+      setCode(pairing);
     });
 
   const revoke = (id: string) =>
@@ -169,91 +273,112 @@ const [holdBusy, setHoldBusy] = useState(false);
       });
     });
 
-    const submitExplanation = async () => {
-  setMsg(null);
-  setHoldBusy(true);
+  const submitExplanation = async () => {
+    setMsg(null);
+    setHoldBusy(true);
 
-  try {
-    await api("/location-hold", {
-      method: "POST",
-      body: { explanation: explanation.trim() },
-    });
+    try {
+      await api("/location-hold", {
+        method: "POST",
+        body: { explanation: explanation.trim() },
+      });
 
-    setExplanation("");
-    setMsg({
-      t: "ok",
-      s: "Explanation submitted. Tracking remains on hold until an administrator reviews it.",
-    });
+      setExplanation("");
+      setMsg({
+        t: "ok",
+        s: "Explanation submitted. Tracking remains on hold until an administrator reviews it.",
+      });
 
-    await load();
-  } catch (e: any) {
-    setMsg({
-      t: "err",
-      s: e.message || "Unable to submit your explanation.",
-    });
-  } finally {
-    setHoldBusy(false);
-  }
-};
+      await load();
+    } catch (error: unknown) {
+      setMsg({
+        t: "err",
+        s: getErrorMessage(
+          error,
+          "Unable to submit your explanation."
+        ),
+      });
+    } finally {
+      setHoldBusy(false);
+    }
+  };
 
   const logout = async () => {
-    await api("/auth/logout", {
-      body: {},
-    });
-
-    router.push("/workforce/login");
+    try {
+      await api("/auth/logout", { body: {} });
+    } finally {
+      router.push("/workforce/login");
+    }
   };
 
   if (!me) {
-    return (
-      <main className="min-h-screen bg-neutral-950 text-neutral-400 p-8">
-        LoadingΓÇª
-      </main>
-    );
-  }
+  return (
+    <main className="min-h-screen bg-neutral-950 p-8 text-neutral-400">
+      <div className="mx-auto max-w-lg space-y-4">
+        {msg?.t === "err" ? (
+          <>
+            <h1 className="text-xl font-semibold text-red-400">
+              Could not load your dashboard
+            </h1>
 
-  const s = me.openSession;
-  const hold = s?.hold ?? null;
-const holdActive = Boolean(hold && hold.status !== "APPROVED");
+            <p className="text-sm text-neutral-300">
+              {msg.s}
+            </p>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMsg(null);
+                void load();
+              }}
+              className="rounded-lg bg-indigo-500 px-4 py-2 font-medium text-white hover:bg-indigo-400"
+            >
+              Retry
+            </button>
+          </>
+        ) : (
+          <p>Loading your dashboard...</p>
+        )}
+      </div>
+    </main>
+  );
+}
+
+  const session = me.openSession;
+  const hold = session?.hold ?? null;
+  const holdActive = Boolean(hold && hold.status !== "APPROVED");
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-100 p-4 md:p-8">
+    <main className="min-h-screen bg-neutral-950 p-4 text-neutral-100 md:p-8">
       <div className="mx-auto max-w-4xl space-y-4">
-
         {/* HEADER */}
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold">
-              My Dashboard
-            </h1>
-
+            <h1 className="text-xl font-semibold">My Dashboard</h1>
             <p className="text-sm text-neutral-400">
-              {me.employee.name}  {me.employee.team}
+              {me.employee.name} {me.employee.team}
             </p>
           </div>
 
           <div className="flex items-center gap-4 text-sm">
-
-            {/* REPORTS LINK */}
-            <a
+            <Link
               className="text-indigo-300 hover:text-indigo-200"
               href="/workforce/reports"
             >
               Reports
-            </a>
+            </Link>
 
-            {/* ADMIN LINK */}
             {me.employee.role === "ADMIN" && (
-              <a
+              <Link
                 className="text-indigo-300 hover:text-indigo-200"
                 href="/workforce/admin"
               >
                 Admin
-              </a>
+              </Link>
             )}
 
-            {/* SIGN OUT */}
             <button
+              type="button"
               className="text-neutral-400 hover:text-white"
               onClick={logout}
             >
@@ -265,94 +390,94 @@ const holdActive = Boolean(hold && hold.status !== "APPROVED");
         {/* SESSION STATUS */}
         <div
           className={`${card} flex items-center gap-3 ${
-            s ? "border-emerald-500/40" : ""
+            session ? "border-emerald-500/40" : ""
           }`}
         >
           <span
             className={`h-2.5 w-2.5 rounded-full ${
-              s ? "bg-emerald-400" : "bg-neutral-500"
+              session ? "bg-emerald-400" : "bg-neutral-500"
             }`}
           />
-
           <b>
-            {s
-              ? "Work session active NexScope monitoring enabled."
-              : "Work session ended  monitoring disabled."}
+            {session
+              ? "Work session active — NexScope monitoring enabled."
+              : "Work session ended — monitoring disabled."}
           </b>
         </div>
-{/* LOCATION HOLD */}
-{holdActive && (
-  <div className={`${card} border-amber-500/40 space-y-4`}>
-    <div>
-      <h2 className="text-lg font-semibold text-amber-400">
-        Location monitoring is on hold
-      </h2>
-      <p className="mt-1 text-sm text-neutral-300">
-        You have left the office geofence. Your desktop agent must remain paused
-        until an administrator approves your explanation.
-      </p>
-    </div>
 
-    {hold?.decisionNote && (
-      <p className="text-sm text-neutral-300">
-        Admin note: {hold.decisionNote}
-      </p>
-    )}
+        {/* LOCATION HOLD */}
+        {holdActive && (
+          <div className={`${card} space-y-4 border-amber-500/40`}>
+            <div>
+              <h2 className="text-lg font-semibold text-amber-400">
+                Location monitoring is on hold
+              </h2>
+              <p className="mt-1 text-sm text-neutral-300">
+                You have left the office geofence. Your desktop agent must
+                remain paused until an administrator approves your explanation.
+              </p>
+            </div>
 
-    {hold?.submittedAt ? (
-      <p className="text-sm text-amber-300">
-        Your explanation has been submitted. Waiting for administrator review.
-      </p>
-    ) : (
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submitExplanation();
-        }}
-        className="space-y-3"
-      >
-        <label className="block text-sm font-medium" htmlFor="hold-explanation">
-          Explain why you left the office
-        </label>
+            {hold?.decisionNote && (
+              <p className="text-sm text-neutral-300">
+                Admin note: {hold.decisionNote}
+              </p>
+            )}
 
-        <textarea
-          id="hold-explanation"
-          value={explanation}
-          onChange={(event) => setExplanation(event.target.value)}
-          minLength={3}
-          maxLength={1000}
-          required
-          rows={4}
-          placeholder="Enter your explanation (3–1000 characters)"
-          className="w-full rounded-lg border border-neutral-700 bg-neutral-900 p-3 text-sm text-white placeholder:text-neutral-500 focus:border-amber-500 focus:outline-none"
-          disabled={holdBusy}
-        />
+            {hold?.submittedAt ? (
+              <p className="text-sm text-amber-300">
+                Your explanation has been submitted. Waiting for administrator
+                review.
+              </p>
+            ) : (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitExplanation();
+                }}
+                className="space-y-3"
+              >
+                <label
+                  className="block text-sm font-medium"
+                  htmlFor="hold-explanation"
+                >
+                  Explain why you left the office
+                </label>
 
-        <button
-          type="submit"
-          disabled={holdBusy || explanation.trim().length < 3}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {holdBusy ? "Submitting..." : "Submit explanation"}
-        </button>
-      </form>
-    )}
-  </div>
-)}
-<LocationReporter active={Boolean(s) && !holdActive} />
+                <textarea
+                  id="hold-explanation"
+                  value={explanation}
+                  onChange={(event) => setExplanation(event.target.value)}
+                  minLength={3}
+                  maxLength={1000}
+                  required
+                  rows={4}
+                  placeholder="Enter your explanation (3–1000 characters)"
+                  className="w-full rounded-lg border border-neutral-700 bg-neutral-900 p-3 text-sm text-white placeholder:text-neutral-500 focus:border-amber-500 focus:outline-none"
+                  disabled={holdBusy}
+                />
 
+                <button
+                  type="submit"
+                  disabled={holdBusy || explanation.trim().length < 3}
+                  className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {holdBusy ? "Submitting..." : "Submit explanation"}
+                </button>
+              </form>
+            )}
+          </div>
+        )}
+
+        <LocationReporter active={Boolean(session) && !holdActive} />
 
         {/* SESSION STATS */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className={card}>
-            <p className="text-xs text-neutral-400">
-              Check-in
-            </p>
-
+            <p className="text-xs text-neutral-400">Check-in</p>
             <p className="text-2xl font-semibold">
-              {s
-                ? new Date(s.startedAt).toLocaleTimeString([], {
+              {session
+                ? new Date(session.startedAt).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
                   })
@@ -361,46 +486,34 @@ const holdActive = Boolean(hold && hold.status !== "APPROVED");
           </div>
 
           <div className={card}>
-            <p className="text-xs text-neutral-400">
-              Session
-            </p>
-
+            <p className="text-xs text-neutral-400">Session</p>
             <p className="text-2xl font-semibold">
-              {s
-                ? hms(
-                    now -
-                      new Date(s.startedAt).getTime()
-                  )
+              {session
+                ? hms(now - new Date(session.startedAt).getTime())
                 : "00:00:00"}
             </p>
           </div>
 
           <div className={card}>
-            <p className="text-xs text-neutral-400">
-              Active (agent)
-            </p>
-
+            <p className="text-xs text-neutral-400">Active (agent)</p>
             <p className="text-2xl font-semibold text-emerald-400">
-              {dur(s?.active ?? 0)}
+              {dur(session?.active ?? 0)}
             </p>
           </div>
 
           <div className={card}>
-            <p className="text-xs text-neutral-400">
-              Idle (agent)
-            </p>
-
+            <p className="text-xs text-neutral-400">Idle (agent)</p>
             <p className="text-2xl font-semibold text-amber-400">
-              {dur(s?.idle ?? 0)}
+              {dur(session?.idle ?? 0)}
             </p>
           </div>
         </div>
 
         {/* CHECK IN / CHECK OUT */}
-        <div className={card + " space-y-3"}>
-
-          {s ? (
+        <div className={`${card} space-y-3`}>
+          {session ? (
             <button
+              type="button"
               disabled={busy}
               onClick={checkOut}
               className={`${btn} bg-red-500`}
@@ -409,6 +522,7 @@ const holdActive = Boolean(hold && hold.status !== "APPROVED");
             </button>
           ) : (
             <button
+              type="button"
               disabled={busy}
               onClick={checkIn}
               className={`${btn} bg-indigo-500`}
@@ -418,25 +532,22 @@ const holdActive = Boolean(hold && hold.status !== "APPROVED");
           )}
 
           <p className="text-xs text-neutral-400">
-            Location is read only when you check in or out.
-            Active/idle minutes come from the desktop agent.
+            Location is read only when you check in or out. Active/idle minutes
+            come from the desktop agent.
           </p>
 
           {msg && (
             <p
               className={`text-sm ${
-                msg.t === "err"
-                  ? "text-red-400"
-                  : "text-emerald-400"
+                msg.t === "err" ? "text-red-400" : "text-emerald-400"
               }`}
             >
               {msg.s}
             </p>
           )}
 
-          {blocked && !s && (
+          {blocked && !session && (
             <div className="space-y-2 rounded-lg border border-amber-500/30 p-3">
-
               <p className="text-sm">
                 Need to work remotely? Ask an administrator.
               </p>
@@ -445,16 +556,12 @@ const holdActive = Boolean(hold && hold.status !== "APPROVED");
                 className="w-full rounded-lg border border-white/10 bg-white/5 p-2 text-sm"
                 placeholder="Reason (e.g. client visit)"
                 value={reason}
-                onChange={(e) =>
-                  setReason(e.target.value)
-                }
+                onChange={(event) => setReason(event.target.value)}
               />
 
               <button
-                disabled={
-                  busy ||
-                  reason.trim().length < 3
-                }
+                type="button"
+                disabled={busy || reason.trim().length < 3}
                 onClick={requestRemote}
                 className={`${btn} bg-amber-500 text-black`}
               >
@@ -465,15 +572,12 @@ const holdActive = Boolean(hold && hold.status !== "APPROVED");
         </div>
 
         {/* DESKTOP AGENT */}
-        <div className={card + " space-y-2"}>
-
+        <div className={`${card} space-y-2`}>
           <div className="flex items-center justify-between">
-
-            <b>
-              My computers (desktop agent)
-            </b>
+            <b>My computers (desktop agent)</b>
 
             <button
+              type="button"
               disabled={busy}
               onClick={pair}
               className={`${btn} bg-white/10 text-sm`}
@@ -485,37 +589,32 @@ const holdActive = Boolean(hold && hold.status !== "APPROVED");
           {code && (
             <p className="rounded-lg bg-indigo-500/10 p-3 text-sm">
               Enter this code in the agent within 10 minutes:{" "}
-              <b className="font-mono text-lg tracking-widest">
-                {code.code}
-              </b>
+              <b className="font-mono text-lg tracking-widest">{code.code}</b>
             </p>
           )}
 
           {me.devices.length === 0 ? (
-            <p className="text-sm text-neutral-400">
-              No computer paired yet.
-            </p>
+            <p className="text-sm text-neutral-400">No computer paired yet.</p>
           ) : (
-            me.devices.map((d: any) => (
+            me.devices.map((device) => (
               <div
-                key={d.id}
+                key={device.id}
                 className="flex items-center justify-between text-sm"
               >
                 <span>
-                  {d.name}{" "}
+                  {device.name}{" "}
                   <span className="text-neutral-500">
-                      last seen{" "}
-                    {d.lastSeenAt
-                      ? new Date(
-                          d.lastSeenAt
-                        ).toLocaleTimeString()
+                    last seen{" "}
+                    {device.lastSeenAt
+                      ? new Date(device.lastSeenAt).toLocaleTimeString()
                       : "never"}
                   </span>
                 </span>
 
                 <button
+                  type="button"
                   className="text-red-400"
-                  onClick={() => revoke(d.id)}
+                  onClick={() => revoke(device.id)}
                 >
                   Revoke
                 </button>
@@ -526,13 +625,9 @@ const holdActive = Boolean(hold && hold.status !== "APPROVED");
 
         {/* RECENT ATTENDANCE */}
         <div className={card}>
-
-          <b>
-            Recent attendance
-          </b>
+          <b>Recent attendance</b>
 
           <table className="mt-2 w-full text-sm">
-
             <thead className="text-left text-neutral-400">
               <tr>
                 <th>Date</th>
@@ -545,55 +640,39 @@ const holdActive = Boolean(hold && hold.status !== "APPROVED");
             </thead>
 
             <tbody>
-              {hist.map((h) => (
+              {hist.map((attendance) => (
                 <tr
-                  key={h.id}
+                  key={attendance.id}
                   className="border-t border-white/5"
                 >
                   <td>
-                    {new Date(
-                      h.startedAt
-                    ).toLocaleDateString()}
+                    {new Date(attendance.startedAt).toLocaleDateString()}
                   </td>
 
                   <td>
-                    {new Date(
-                      h.startedAt
-                    ).toLocaleTimeString([], {
+                    {new Date(attendance.startedAt).toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
                   </td>
 
                   <td>
-                    {h.endedAt
-                      ? new Date(
-                          h.endedAt
-                        ).toLocaleTimeString([], {
+                    {attendance.endedAt
+                      ? new Date(attendance.endedAt).toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit",
                         })
                       : "in progress"}
                   </td>
 
-                  <td>
-                    {dur(h.active ?? 0)}
-                  </td>
-
-                  <td>
-                    {dur(h.idle ?? 0)}
-                  </td>
-
-                  <td>
-                    {h.zone}
-                  </td>
+                  <td>{dur(attendance.active ?? 0)}</td>
+                  <td>{dur(attendance.idle ?? 0)}</td>
+                  <td>{attendance.zone}</td>
                 </tr>
               ))}
             </tbody>
-
           </table>
         </div>
-
       </div>
     </main>
   );
