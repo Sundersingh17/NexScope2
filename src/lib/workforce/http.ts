@@ -104,9 +104,10 @@ function isAllowedOrigin(origin: string) {
   return false;
 }
 
-// Wrap every route: feature flag, same-origin check for writes, uniform errors.
+// Wrap routes: feature flag, write-origin policy, and uniform errors.
 export function handle<Context = unknown>(
-  fn: (req: Request, ctx: Context) => Promise<Response>
+  fn: (req: Request, ctx: Context) => Promise<Response>,
+  options: { allowMissingOrigin?: boolean } = {}
 ) {
   return async (req: Request, ctx: Context) => {
     try {
@@ -117,7 +118,11 @@ export function handle<Context = unknown>(
       if (req.method !== "GET") {
         const origin = req.headers.get("origin");
 
-        if (!origin || !isAllowedOrigin(origin)) {
+        const originAllowed = origin
+          ? isAllowedOrigin(origin)
+          : options.allowMissingOrigin === true;
+
+        if (!originAllowed) {
           throw new HttpError(403, "Bad origin");
         }
       }

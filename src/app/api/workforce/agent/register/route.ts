@@ -20,4 +20,4 @@ export const POST = handle(async (req) => {
   const emp = await prisma.wfEmployee.findUnique({ where: { id: pc.employeeId }, select: { name: true } });
   await audit(pc.employeeId, "DEVICE_REGISTERED", d.id);
   return Response.json({ deviceId: d.id, deviceToken: token, employeeName: emp?.name });
-});
+}, { allowMissingOrigin: true });

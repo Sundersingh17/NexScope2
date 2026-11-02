@@ -140,4 +140,4 @@ export const POST = handle(async (req) => {
   });
 
   return Response.json(result);
-});
+}, { allowMissingOrigin: true });
