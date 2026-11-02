@@ -463,6 +463,7 @@ model WfHourlyReport {
   noteEnc     String?
   status      String    @default("DRAFT") // DRAFT | SUBMITTED
   submittedAt DateTime?
+  savedAt      DateTime?
   createdAt   DateTime  @default(now())
 
   @@unique([sessionId, periodStart])

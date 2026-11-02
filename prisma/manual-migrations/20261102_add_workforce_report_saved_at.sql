@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE public.wf_hourly_report
+ADD COLUMN IF NOT EXISTS "savedAt" TIMESTAMP(3);
+
+COMMIT;

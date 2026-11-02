@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -38,6 +37,7 @@ type ReportRow = {
   project: string | null;
   note: string | null;
   submittedAt: string | null;
+  savedAt: string | null;
 };
 
 type AccessLogEntry = {
@@ -50,8 +50,6 @@ type ReportEdit = {
   project: string;
   note: string;
 };
-
-
 
 function errorStatus(error: unknown): number | undefined {
   if (
@@ -103,7 +101,7 @@ export default function MyReports() {
       });
 
       const accessData = await api<{ entries: AccessLogEntry[] }>(
-        "/access-log"
+        "/access-log",
       );
 
       setLog(accessData.entries);
@@ -131,10 +129,7 @@ export default function MyReports() {
     };
   }, [load]);
 
-  const run = async (
-    fn: () => Promise<unknown>,
-    successMessage = ""
-  ) => {
+  const run = async (fn: () => Promise<unknown>, successMessage = "") => {
     setMsg("");
 
     try {
@@ -155,10 +150,7 @@ export default function MyReports() {
     }
   };
 
-  const updateEdit = (
-    id: string,
-    changes: Partial<ReportEdit>
-  ) => {
+  const updateEdit = (id: string, changes: Partial<ReportEdit>) => {
     setEdit((current) => ({
       ...current,
       [id]: {
@@ -178,16 +170,14 @@ export default function MyReports() {
             submit,
           },
         }),
-      submit ? "Report submitted" : "Saved"
+      submit ? "Report submitted" : "Saved",
     );
 
   const draft = async (id: string) => {
     setMsg("");
 
     try {
-      const result = await api<{ text: string }>(
-        `/reports/${id}/draft`
-      );
+      const result = await api<{ text: string }>(`/reports/${id}/draft`);
 
       updateEdit(id, { note: result.text });
       setMsg("AI draft generated. Review it before saving.");
@@ -207,13 +197,10 @@ export default function MyReports() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetch(
-        `/api/workforce/reports/${id}/files`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      const response = await fetch(`/api/workforce/reports/${id}/files`, {
+        method: "POST",
+        body: formData,
+      });
 
       if (!response.ok) {
         let message = "Upload failed";
@@ -242,7 +229,7 @@ export default function MyReports() {
     run(() =>
       api<unknown>(`/files/${fileId}`, {
         method: "DELETE",
-      })
+      }),
     );
 
   return (
@@ -252,7 +239,8 @@ export default function MyReports() {
           <div>
             <h1 className="text-xl font-semibold">Hourly Reports</h1>
             <p className="text-sm text-neutral-400">
-              Tracked activity + your work. Measured only; no productivity score.
+              Tracked activity + your work. Measured only; no productivity
+              score.
             </p>
           </div>
 
@@ -269,8 +257,8 @@ export default function MyReports() {
 
         {rows.length === 0 && (
           <div className={`${card} text-sm text-neutral-400`}>
-            No reports yet. A report appears about 2 minutes after each
-            full hour of a work session (and when you check out).
+            No reports yet. A report appears about 2 minutes after each full
+            hour of a work session (and when you check out).
           </div>
         )}
 
@@ -301,12 +289,16 @@ export default function MyReports() {
 
                 <span
                   className={`rounded-full border px-2 text-xs ${
-                    locked
+                    locked || report.savedAt
                       ? "border-emerald-500/40 text-emerald-400"
                       : "border-amber-500/40 text-amber-400"
                   }`}
                 >
-                  {locked ? "Submitted" : "Work upload pending"}
+                  {locked
+                    ? "Submitted"
+                    : report.savedAt
+                      ? "Saved"
+                      : "Work upload pending"}
                 </span>
               </div>
 
@@ -402,7 +394,7 @@ export default function MyReports() {
                   <button
                     type="button"
                     className="rounded-lg bg-white/10 px-3 py-1.5"
-                    onClick={() => save(report.id)}
+                   onClick={() => void save(report.id)}
                   >
                     Save
                   </button>

@@ -20,7 +20,9 @@ export const PATCH = handle(async (req, ctx: { params: Promise<{ id: string }> }
     data: {
       ...(b.project !== undefined ? { project: b.project || null } : {}),
       ...(b.note !== undefined ? { noteEnc: b.note ? encrypt(b.note) : null } : {}),
-      ...(b.submit ? { status: "SUBMITTED", submittedAt: new Date() } : {}),
+      ...(b.submit
+  ? { status: "SUBMITTED", submittedAt: new Date() }
+  : { savedAt: new Date() }),
     },
   });
   if (b.submit) await audit(e.id, "REPORT_SUBMITTED", id);
